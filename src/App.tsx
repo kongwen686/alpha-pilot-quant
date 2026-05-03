@@ -45,7 +45,6 @@ import {
 import {
   formatCurrency,
   marketLabels,
-  sumCapital,
   type BacktestTask,
   type BacktestResult,
   type DataAggregateInsight,
@@ -73,6 +72,8 @@ import {
   type User as QuantUser
 } from "./quantEngine";
 import * as api from "./api";
+
+let initialMarketSyncStarted = false;
 
 type ViewId =
   | "dashboard"
@@ -193,7 +194,36 @@ function App() {
   const [notice, setNotice] = useState<ActionNotice>(null);
 
   useEffect(() => {
-    api.getState().then(setState).catch((err: Error) => setError(err.message));
+    let active = true;
+    if (initialMarketSyncStarted) {
+      api.getState().then((nextState) => {
+        if (active) setState(nextState);
+      }).catch((err: Error) => {
+        if (active) setError(err.message);
+      });
+      return () => {
+        active = false;
+      };
+    }
+    initialMarketSyncStarted = true;
+    api.runDataPipeline()
+      .then((nextState) => {
+        if (active) setState(nextState);
+      })
+      .catch((err: Error) => {
+        api.getState()
+          .then((nextState) => {
+            if (!active) return;
+            setState(nextState);
+            setError(`真实行情接口同步失败，已加载最近一次接口状态：${err.message}`);
+          })
+          .catch((fallbackErr: Error) => {
+            if (active) setError(fallbackErr.message);
+          });
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
   const title = useMemo(() => {
@@ -383,28 +413,35 @@ function ViewRenderer({
 
 function Dashboard({ state, apply, setView }: { state: QuantState; apply: ApplyAction; setView: (view: ViewId) => void }) {
   const running = state.strategies.filter((item) => item.status === "运行中").length;
-  const completedBacktests = state.backtests.filter((item) => item.status === "已完成").length;
-  const pending = state.orders.filter((item) => item.status === "待执行" || item.status === "部分成交").length;
+  const runningBacktests = state.backtests.filter((item) => item.status === "运行中").length;
+  const liveStrategies = state.strategies.filter((item) => item.status !== "停止").length;
+  const positionMarketValue = getPositionMarketValue(state);
+  const accountValue = getAccountValue(state);
+  const dayPnl = getPositionPnl(state);
+  const dayPnlPct = accountValue > 0 ? (dayPnl / accountValue) * 100 : 0;
+  const maxDrawdown = getRiskIndicator(state, "最大回撤")?.value ?? Math.max(0, ...state.strategies.map((item) => item.maxDrawdown));
+  const riskAlerts = state.riskIndicators.filter((item) => item.status === "告警").length + state.riskRules.filter((item) => item.status === "告警").length;
+  const latestSync = state.dataSyncRuns[0]?.time ?? state.marketQuotes[0]?.timestamp ?? "-";
   return (
     <>
       <div className="metric-grid">
-        <Metric title="策略总数" value={state.strategies.length + 123} delta="+12 本月新增" icon={Brain} />
-        <Metric title="回测任务" value={state.backtests.length + 52} delta={`${state.backtests.filter((item) => item.status === "运行中").length + 6} 运行中`} icon={LineChart} />
-        <Metric title="实盘策略" value={running + 20} delta="+3 运行中" icon={Activity} />
-        <Metric title="总资产（实盘）" value={formatCurrency(sumCapital(state) + 10_765_432.11)} delta="+2.35% 当日收益" icon={Wallet} />
-        <Metric title="当日收益" value="+2,345,678.90" delta="+1.86%" icon={BarChart3} tone="green" />
-        <Metric title="最大回撤" value="8.35%" delta="-0.42% 近30日" icon={AlertTriangle} />
-        <Metric title="风险预警" value={state.alerts} delta={`较昨日 +${Math.max(1, state.alerts - 2)}`} icon={Shield} tone="red" />
+        <Metric title="策略总数" value={state.strategies.length} delta={`运行中 ${running}`} icon={Brain} />
+        <Metric title="回测任务" value={state.backtests.length} delta={`${runningBacktests} 运行中`} icon={LineChart} />
+        <Metric title="交易策略" value={liveStrategies} delta={`${state.systemConfig.tradingMode}模式`} icon={Activity} />
+        <Metric title="总资产（接口）" value={formatCurrency(accountValue)} delta={`持仓 ${formatCurrency(positionMarketValue)}`} icon={Wallet} />
+        <Metric title="当日收益" value={formatSignedCurrency(dayPnl)} delta={formatSignedPercent(dayPnlPct)} icon={BarChart3} tone={dayPnl >= 0 ? "green" : "red"} />
+        <Metric title="最大回撤" value={`${maxDrawdown.toFixed(2)}%`} delta={latestSync} icon={AlertTriangle} tone={maxDrawdown > 10 ? "red" : undefined} />
+        <Metric title="风险预警" value={riskAlerts} delta={`风险评分 ${state.riskScore}`} icon={Shield} tone={riskAlerts > 0 ? "red" : "green"} />
       </div>
       <div className="dashboard-layout">
-        <Panel title="资产曲线（实盘）" action={<button onClick={() => setView("backtest-results")}>近3月</button>}>
+        <Panel title="资产曲线（接口）" action={<button onClick={() => setView("backtest-results")}>近3月</button>}>
           <LineChartCard values={state.marketSeries} labels={state.marketLabels ?? marketLabels} />
         </Panel>
         <Panel title="策略分布（按类型）">
           <Donut strategies={state.strategies} />
         </Panel>
         <Panel title="风险监控（实时）" action={<button onClick={() => setView("risk-monitor")}>更多</button>}>
-          <Gauge score={state.riskScore} />
+          <Gauge state={state} />
         </Panel>
         <Panel title="策略运行状态">
           <StrategyTable strategies={state.strategies} apply={apply} compact />
@@ -680,7 +717,7 @@ function RiskManagement({ view, state, apply }: { view: ViewId; state: QuantStat
     return (
       <div className="content-grid two">
         <Panel title="风险监控" action={<button onClick={() => apply(api.refreshRisk)}>实时风控</button>}>
-          <Gauge score={state.riskScore} detailed />
+          <Gauge state={state} detailed />
         </Panel>
         <Panel title="交易风险指标">
           <RiskIndicatorTable indicators={state.riskIndicators} />
@@ -762,6 +799,47 @@ function SystemManagement({ view, state, apply }: { view: ViewId; state: QuantSt
   );
 }
 
+function getRiskIndicator(state: QuantState, name: string) {
+  return state.riskIndicators.find((item) => item.name === name);
+}
+
+function formatIndicator(state: QuantState, name: string) {
+  const indicator = getRiskIndicator(state, name);
+  return indicator ? `${indicator.value}${indicator.unit}` : "-";
+}
+
+function getPositionMarketValue(state: QuantState) {
+  return state.positions.reduce((sum, position) => sum + position.quantity * position.last, 0);
+}
+
+function getAccountValue(state: QuantState) {
+  return getPositionMarketValue(state) + Number(state.cashBalance ?? 0);
+}
+
+function getPositionPnl(state: QuantState) {
+  return state.positions.reduce((sum, position) => sum + (position.last - position.cost) * position.quantity, 0);
+}
+
+function formatSignedCurrency(value: number) {
+  return `${value >= 0 ? "+" : ""}${formatCurrency(value)}`;
+}
+
+function formatSignedPercent(value: number) {
+  return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
+}
+
+function formatDataVolume(rows: number) {
+  const bytes = rows * 320;
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = bytes;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return `${value.toFixed(value >= 100 ? 0 : value >= 10 ? 1 : 2)} ${units[unitIndex]}`;
+}
+
 function Metric({ title, value, delta, icon: Icon, tone }: { title: string; value: string | number; delta: string; icon: LucideIcon; tone?: "green" | "red" }) {
   return (
     <div className="metric-card">
@@ -785,23 +863,22 @@ function Panel({ title, action, children }: { title: string; action?: React.Reac
 }
 
 function LineChartCard({ values, labels }: { values: number[]; labels: string[] }) {
-  const min = Math.min(...values, -10);
-  const max = Math.max(...values, 20);
-  const points = values
+  const series = values.length > 1 ? values : [0, ...(values.length ? values : [0])];
+  const min = Math.min(...series, -10);
+  const max = Math.max(...series, 20);
+  const points = series
     .map((value, index) => {
-      const x = (index / (values.length - 1)) * 100;
+      const x = (index / (series.length - 1)) * 100;
       const y = 88 - ((value - min) / (max - min)) * 76;
       return `${x},${y}`;
     })
     .join(" ");
   return (
     <div className="chart-wrap">
-      <div className="legend"><span className="dot dot-blue" />策略收益 <span className="dot dot-green" />基准收益 <span className="dot dot-yellow" />超额收益</div>
+      <div className="legend"><span className="dot dot-blue" />接口收益序列</div>
       <svg viewBox="0 0 100 100" role="img" aria-label="收益曲线">
         {[20, 40, 60, 80].map((y) => <line key={y} x1="0" x2="100" y1={y} y2={y} className="grid-line" />)}
         <polyline points={points} fill="none" className="chart-line" />
-        <polyline points={values.map((v, i) => `${(i / (values.length - 1)) * 100},${88 - ((v * 0.34 + 2 - min) / (max - min)) * 76}`).join(" ")} fill="none" className="chart-line green-line" />
-        <polyline points={values.map((v, i) => `${(i / (values.length - 1)) * 100},${88 - ((v * -0.22 + 3 - min) / (max - min)) * 76}`).join(" ")} fill="none" className="chart-line yellow-line" />
       </svg>
       <div className="axis">{labels.filter((_, i) => i % 2 === 0).map((label) => <span key={label}>{label}</span>)}</div>
     </div>
@@ -810,19 +887,33 @@ function LineChartCard({ values, labels }: { values: number[]; labels: string[] 
 
 function Donut({ strategies }: { strategies: Strategy[] }) {
   const total = strategies.length || 1;
+  const totalCapital = strategies.reduce((sum, strategy) => sum + strategy.capital, 0) || 1;
+  const groups = Array.from(strategies.reduce((map, strategy) => {
+    const current = map.get(strategy.type) ?? { type: strategy.type, count: 0, capital: 0 };
+    current.count += 1;
+    current.capital += strategy.capital;
+    map.set(strategy.type, current);
+    return map;
+  }, new Map<string, { type: string; count: number; capital: number }>()).values());
   return (
     <div className="donut-wrap">
-      <div className="donut"><strong>{total + 123}</strong><span>总数</span></div>
+      <div className="donut"><strong>{total}</strong><span>总数</span></div>
       <div className="distribution">
-        {strategies.map((strategy, index) => (
-          <p key={strategy.id}><span className={`swatch c${index}`} />{strategy.type}<b>{strategy.capital / 1_000_000} ({((1 / total) * 100).toFixed(2)}%)</b></p>
+        {groups.map((group, index) => (
+          <p key={group.type}><span className={`swatch c${index}`} />{group.type}<b>{group.count} / {formatCurrency(group.capital)} ({((group.capital / totalCapital) * 100).toFixed(2)}%)</b></p>
         ))}
       </div>
     </div>
   );
 }
 
-function Gauge({ score, detailed }: { score: number; detailed?: boolean }) {
+function Gauge({ state, detailed }: { state: QuantState; detailed?: boolean }) {
+  const score = state.riskScore;
+  const leverage = getRiskIndicator(state, "杠杆率");
+  const concentration = getRiskIndicator(state, "品种集中度");
+  const var95 = getRiskIndicator(state, "VaR(95%)");
+  const drawdown = getRiskIndicator(state, "最大回撤");
+  const warningCount = state.riskIndicators.filter((item) => item.status === "告警").length + state.riskRules.filter((item) => item.status === "告警").length;
   return (
     <div className="gauge-wrap">
       <div className="gauge" style={{ "--score": `${score * 1.8}deg` } as React.CSSProperties}>
@@ -830,11 +921,11 @@ function Gauge({ score, detailed }: { score: number; detailed?: boolean }) {
         <strong>{score}</strong>
       </div>
       <div className="risk-list">
-        <p><span>VaR(95%)</span><b>2.35%</b></p>
-        <p><span>预期最大回撤</span><b>8.35%</b></p>
-        <p><span>杠杆率</span><b>1.85x</b></p>
-        <p><span>集中度</span><b>32.45%</b></p>
-        <p><span>流动性风险</span><b className="up">低</b></p>
+        <p><span>VaR(95%)</span><b>{var95 ? `${var95.value}${var95.unit}` : "-"}</b></p>
+        <p><span>最大回撤</span><b>{drawdown ? `${drawdown.value}${drawdown.unit}` : "-"}</b></p>
+        <p><span>杠杆率</span><b>{leverage ? `${leverage.value}${leverage.unit}` : "-"}</b></p>
+        <p><span>集中度</span><b>{concentration ? `${concentration.value}${concentration.unit}` : "-"}</b></p>
+        <p><span>预警数量</span><b className={warningCount > 0 ? "down" : "up"}>{warningCount}</b></p>
         <p><span>风控状态</span><b className={score > 70 ? "down" : "up"}>{score > 70 ? "告警" : "正常"}</b></p>
       </div>
       {detailed && <Pipeline steps={["风险指标计算", "风险限额管理", "压力测试", "风险报告", "告警通知"]} />}
@@ -886,11 +977,12 @@ function TradeSummary({ state, apply, expanded }: { state: QuantState; apply: Ap
   const filled = state.orders.filter((item) => item.status === "已成交").length;
   const filledAmount = state.orders.filter((item) => item.status === "已成交").reduce((sum, order) => sum + order.amount, 0);
   const canceled = state.orders.filter((item) => item.status === "已撤单").length;
+  const partial = state.orders.filter((item) => item.status === "部分成交").length;
   return (
     <div className="trade-box">
       <div className="trade-metrics">
-        <Metric title="委托数量" value={state.orders.length + 52} delta={`待执行 ${pending}`} icon={ListChecks} />
-        <Metric title="成交数量" value={filled + 42} delta={`部分成交 ${state.orders.filter((item) => item.status === "部分成交").length}`} icon={CheckCircle2} />
+        <Metric title="委托数量" value={state.orders.length} delta={`待执行 ${pending}`} icon={ListChecks} />
+        <Metric title="成交数量" value={filled} delta={`部分成交 ${partial}`} icon={CheckCircle2} />
         <Metric title="成交金额" value={formatCurrency(filledAmount)} delta={`现金 ${formatCurrency(state.cashBalance)}`} icon={Wallet} />
         <Metric title="撤单数量" value={canceled} delta={`已撤单 ${canceled}`} icon={XCircle} />
       </div>
@@ -1109,11 +1201,13 @@ function DataSnapshot({ state, expanded }: { state: QuantState; expanded?: boole
   const totalRows = state.dataSources.reduce((sum, item) => sum + item.rows, 0);
   const normal = state.dataSources.filter((item) => item.status === "正常").length;
   const lastSync = state.dataSyncRuns[0]?.time ?? state.dataSources[0]?.latestUpdate ?? "-";
+  const enabledProviders = state.dataProviderConfigs.filter((item) => item.enabled).length;
+  const activeSubscriptions = state.dataSubscriptions.filter((item) => item.status !== "暂停").length;
   return (
     <div className={`snapshot ${expanded ? "expanded" : ""}`}>
-      <Metric title="数据源" value={state.dataSources.length + 7} delta={`正常 ${normal} 异常 ${state.dataSources.length - normal}`} icon={Database} />
-      <Metric title="采集接口" value={state.dataProviderConfigs.filter((item) => item.enabled).length} delta={`${state.dataSubscriptions.filter((item) => item.status !== "暂停").length} 个订阅活跃`} icon={Table2} />
-      <Metric title="数据量" value="2.35 TB" delta={`+${Math.round(totalRows / 100000)} GB 今日`} icon={HardDrive} />
+      <Metric title="数据源" value={state.dataSources.length} delta={`正常 ${normal} 异常 ${state.dataSources.length - normal}`} icon={Database} />
+      <Metric title="采集接口" value={enabledProviders} delta={`${activeSubscriptions} 个订阅活跃`} icon={Table2} />
+      <Metric title="数据量" value={formatDataVolume(totalRows)} delta={`${formatCurrency(totalRows)} 行记录`} icon={HardDrive} />
       <Metric title="数据更新" value={lastSync} delta="最新同步" icon={RefreshCw} />
     </div>
   );
@@ -1399,17 +1493,16 @@ function ResultAttribution({ results, tasks }: { results: BacktestResult[]; task
 
 function RiskMetrics({ state }: { state: QuantState }) {
   const maxDrawdown = Math.max(0, ...state.strategies.map((item) => item.maxDrawdown));
-  const getIndicator = (name: string, fallback: string) => {
-    const indicator = state.riskIndicators.find((item) => item.name === name);
-    return indicator ? `${indicator.value}${indicator.unit}` : fallback;
-  };
+  const sharpe = state.backtestResults.length > 0
+    ? Math.max(...state.backtestResults.map((item) => item.sharpe))
+    : Math.max(0, ...state.backtests.map((item) => item.sharpe));
   return (
     <div className="risk-metrics">
-      <Metric title="VaR(95%)" value={getIndicator("VaR(95%)", "2.35%")} delta="蒙特卡洛 10,000 次" icon={Shield} />
-      <Metric title="ES" value={getIndicator("ES", "3.12%")} delta="尾部风险" icon={AlertTriangle} />
+      <Metric title="VaR(95%)" value={formatIndicator(state, "VaR(95%)")} delta="接口风险指标" icon={Shield} />
+      <Metric title="ES" value={formatIndicator(state, "ES")} delta="接口风险指标" icon={AlertTriangle} />
       <Metric title="最大回撤" value={`${maxDrawdown.toFixed(2)}%`} delta="近30日" icon={LineChart} />
-      <Metric title="夏普比率" value="1.85" delta="年化口径" icon={BarChart3} />
-      <Metric title="品种集中度" value={getIndicator("品种集中度", "32.45%")} delta="IF/ETF 偏高" icon={Boxes} />
+      <Metric title="夏普比率" value={sharpe.toFixed(2)} delta={`${state.backtestResults.length} 条回测结果`} icon={BarChart3} />
+      <Metric title="品种集中度" value={formatIndicator(state, "品种集中度")} delta={`${state.positions.length} 个持仓`} icon={Boxes} />
       <Metric title="风险评分" value={state.riskScore} delta={state.riskScore > 70 ? "需要处置" : "正常"} icon={Activity} tone={state.riskScore > 70 ? "red" : "green"} />
     </div>
   );
