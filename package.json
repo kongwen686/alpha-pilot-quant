@@ -1,0 +1,38 @@
+{
+  "name": "alpha-pilot-quant",
+  "version": "0.1.0",
+  "description": "Open-source AI quant trading workbench for signal selection, simulated auto trading, risk controls, and market data workflows.",
+  "private": false,
+  "license": "MIT",
+  "type": "module",
+  "keywords": [
+    "quant",
+    "trading",
+    "signals",
+    "risk-management",
+    "react",
+    "typescript"
+  ],
+  "scripts": {
+    "api": "tsx server/index.ts",
+    "web": "vite --host 0.0.0.0",
+    "dev": "concurrently -k \"npm:api\" \"npm:web\"",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 0.0.0.0"
+  },
+  "dependencies": {
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.24",
+    "@types/react-dom": "^18.3.7",
+    "@types/node": "^22.18.8",
+    "@vitejs/plugin-react": "^5.0.4",
+    "concurrently": "^9.2.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vite": "^5.4.21"
+  }
+}
