@@ -6,12 +6,13 @@ The project is built for research, demos, education, and prototype validation. I
 
 ## Features
 
-- Data center: Tencent Securities quote ingestion, data source registry, provider configs, subscriptions, and quality checks.
-- Research workspace: factor calculation, strategy library, strategy toggles, and MiroFish-style market scenario simulation adapter.
+- Data center: Tencent Securities quote crawling, scheduled data sync, data source registry, provider configs, subscriptions, quality checks, and aggregation insights.
+- Research workspace: configurable factor formulas, factor calculation, strategy library, strategy toggles, strategy optimization, and MiroFish-style market scenario simulation adapter.
 - Signal selection: ranks tradable A-share and ETF quotes with factor bias, momentum, liquidity, and position constraints.
 - Auto trading loop: generates simulated buy/sell orders from signals, handles stop-loss, take-profit, overweight trimming, cash balance, and mock fills.
-- Backtesting and analytics: task creation, progress simulation, result library, attribution, and stress scenarios.
+- Backtesting and analytics: task creation, execution progress simulation, result analysis, attribution, and stress scenarios.
 - Risk management: VaR, ES, drawdown, leverage, concentration, rule toggles, and audit logs.
+- One-click workflow: runs data sync, quality checks, factor calculation, MiroFish simulation, strategy optimization, backtesting, signal selection, auto trading, and risk refresh.
 - Local REST API: all UI actions go through `/api/*` and persist state to `data/state.json`.
 
 ## Tech Stack
@@ -53,6 +54,7 @@ Useful variables:
 
 - `API_PORT`: API server port. Default: `8787`.
 - `AUTO_TRADER_INTERVAL_MS`: interval for scheduled auto trading. Default: `0`, disabled.
+- `AUTO_DATA_SYNC_INTERVAL_MS`: interval for scheduled data crawling and sync. Default: `0`, disabled.
 - `AUTO_TRADER_SYNC_MARKET`: set to `false` to skip market sync in scheduled runs.
 
 Example:
@@ -66,6 +68,19 @@ AUTO_TRADER_INTERVAL_MS=60000 npm run api
 Read endpoints:
 
 - `GET /api/state`
+- `GET /api/data-sources`
+- `GET /api/data-provider-configs`
+- `GET /api/data-subscriptions`
+- `GET /api/data-sync-runs`
+- `GET /api/data-aggregate-insights`
+- `GET /api/factors`
+- `GET /api/factor-configs`
+- `GET /api/mirofish/config`
+- `GET /api/mirofish/scenarios`
+- `GET /api/strategies`
+- `GET /api/strategy-optimizations`
+- `GET /api/backtests`
+- `GET /api/backtest-results`
 - `GET /api/market-quotes`
 - `GET /api/stock-signals`
 - `GET /api/auto-trade-runs`
@@ -78,11 +93,35 @@ Action endpoints:
 
 - `POST /api/data/pipeline`
 - `POST /api/data/quality-check`
+- `POST /api/data-provider-configs`
+- `PATCH /api/data-provider-configs/:id/toggle`
+- `POST /api/data-subscriptions`
+- `PATCH /api/data-subscriptions/:id/toggle`
+- `PATCH /api/data-sources/:id/subscription`
 - `POST /api/factors/compute`
+- `POST /api/factors`
+- `PATCH /api/factors/:id/toggle`
+- `POST /api/factor-configs`
+- `PATCH /api/factor-configs/:id/toggle`
+- `POST /api/mirofish/config`
+- `POST /api/mirofish/scenarios`
+- `POST /api/mirofish/advance`
+- `POST /api/mirofish/scenarios/:id/publish-factor`
+- `POST /api/strategies`
+- `PATCH /api/strategies/:id/toggle`
+- `POST /api/strategies/optimize`
+- `POST /api/backtests`
+- `POST /api/backtests/advance`
 - `POST /api/signals/select`
 - `POST /api/trading/auto`
+- `POST /api/orders`
 - `POST /api/orders/execute`
+- `PATCH /api/orders/:id/cancel`
+- `PATCH /api/positions/:id/rebalance`
 - `POST /api/risk/refresh`
+- `POST /api/risk-rules`
+- `PATCH /api/risk-rules/:id/toggle`
+- `POST /api/workflow/run`
 - `POST /api/system-config`
 
 Auto trading request example:

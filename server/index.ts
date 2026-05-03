@@ -13,8 +13,11 @@ import {
   advanceMiroFishScenarios,
   createMiroFishScenario,
   executePendingOrders,
+  finalizeDataSync,
   generateOrder,
+  optimizeStrategies,
   publishMiroFishFactor,
+  runOperationalWorkflow,
   runAutoTrading,
   refreshRisk,
   runSignalSelection,
@@ -23,6 +26,7 @@ import {
   subscribeSource,
   toggleDataSubscription,
   toggleFactor,
+  toggleFactorConfig,
   toggleProviderConfig,
   toggleRiskRule,
   toggleService,
@@ -30,6 +34,7 @@ import {
   upsertDataSource,
   upsertDataSubscription,
   upsertFactor,
+  upsertFactorConfig,
   upsertMiroFishConfig,
   upsertProviderConfig,
   upsertRole,
@@ -42,6 +47,7 @@ import { ingestRealMarketData } from "./marketData";
 
 const PORT = Number(process.env.API_PORT ?? 8787);
 const AUTO_TRADER_INTERVAL_MS = Number(process.env.AUTO_TRADER_INTERVAL_MS ?? 0);
+const AUTO_DATA_SYNC_INTERVAL_MS = Number(process.env.AUTO_DATA_SYNC_INTERVAL_MS ?? 0);
 const stateFile = resolve(process.cwd(), "data/state.json");
 
 type Handler = (state: QuantState, body: unknown, req: IncomingMessage) => Promise<QuantState> | QuantState;
@@ -54,11 +60,15 @@ function normalizeState(raw: QuantState): QuantState {
     dataProviderConfigs: raw.dataProviderConfigs ?? initial.dataProviderConfigs,
     dataQualityRules: raw.dataQualityRules ?? initial.dataQualityRules,
     dataSubscriptions: raw.dataSubscriptions ?? initial.dataSubscriptions,
+    dataSyncRuns: raw.dataSyncRuns ?? initial.dataSyncRuns,
+    dataAggregateInsights: raw.dataAggregateInsights ?? initial.dataAggregateInsights,
+    factorConfigs: raw.factorConfigs ?? initial.factorConfigs,
     miroFishConfig: raw.miroFishConfig ?? initial.miroFishConfig,
     miroFishScenarios: raw.miroFishScenarios ?? initial.miroFishScenarios,
     backtestResults: raw.backtestResults ?? initial.backtestResults,
     stockSignals: raw.stockSignals ?? initial.stockSignals,
     autoTradeRuns: raw.autoTradeRuns ?? initial.autoTradeRuns,
+    strategyOptimizations: raw.strategyOptimizations ?? initial.strategyOptimizations,
     riskIndicators: raw.riskIndicators ?? initial.riskIndicators,
     roles: raw.roles ?? initial.roles,
     systemConfig: { ...initial.systemConfig, ...(raw.systemConfig ?? {}) },
@@ -71,6 +81,7 @@ function normalizeState(raw: QuantState): QuantState {
     ...state,
     backtests: state.backtests.map((task) => ({
       ...task,
+      strategyId: task.strategyId ?? state.strategies.find((strategy) => strategy.name === task.strategy)?.id ?? initial.strategies[0]?.id ?? "",
       universe: task.universe ?? "全A流动性池",
       benchmark: task.benchmark ?? "沪深300",
       period: task.period ?? "2021-01-01 至 2026-05-01",
@@ -134,7 +145,7 @@ function getParam(pathname: string, pattern: RegExp) {
 }
 
 const mutationRoutes: Array<{ method: string; pattern: RegExp; handler: Handler }> = [
-  { method: "POST", pattern: /^\/api\/data\/pipeline$/, handler: (state) => ingestRealMarketData(state) },
+  { method: "POST", pattern: /^\/api\/data\/pipeline$/, handler: async (state) => finalizeDataSync(await ingestRealMarketData(state), "手动", "自动爬取并同步真实行情，完成清洗、聚合分析和数据服务发布") },
   { method: "POST", pattern: /^\/api\/data\/quality-check$/, handler: (state) => runDataQualityCheck(state) },
   { method: "POST", pattern: /^\/api\/data-sources$/, handler: (state, body) => upsertDataSource(state, body as Parameters<typeof upsertDataSource>[1]) },
   { method: "POST", pattern: /^\/api\/data-subscriptions$/, handler: (state, body) => upsertDataSubscription(state, body as Parameters<typeof upsertDataSubscription>[1]) },
@@ -151,6 +162,12 @@ const mutationRoutes: Array<{ method: string; pattern: RegExp; handler: Handler 
   },
   { method: "POST", pattern: /^\/api\/factors\/compute$/, handler: (state) => computeFactors(state) },
   { method: "POST", pattern: /^\/api\/factors$/, handler: (state, body) => upsertFactor(state, body as Parameters<typeof upsertFactor>[1]) },
+  { method: "POST", pattern: /^\/api\/factor-configs$/, handler: (state, body) => upsertFactorConfig(state, body as Parameters<typeof upsertFactorConfig>[1]) },
+  {
+    method: "PATCH",
+    pattern: /^\/api\/factor-configs\/([^/]+)\/toggle$/,
+    handler: (state, _body, req) => toggleFactorConfig(state, getParam(new URL(req.url ?? "/", "http://local").pathname, /^\/api\/factor-configs\/([^/]+)\/toggle$/))
+  },
   { method: "POST", pattern: /^\/api\/mirofish\/config$/, handler: (state, body) => upsertMiroFishConfig(state, body as Parameters<typeof upsertMiroFishConfig>[1]) },
   { method: "POST", pattern: /^\/api\/mirofish\/scenarios$/, handler: (state, body) => createMiroFishScenario(state, body as Parameters<typeof createMiroFishScenario>[1]) },
   { method: "POST", pattern: /^\/api\/mirofish\/advance$/, handler: (state) => advanceMiroFishScenarios(state) },
@@ -176,6 +193,7 @@ const mutationRoutes: Array<{ method: string; pattern: RegExp; handler: Handler 
     pattern: /^\/api\/strategies\/([^/]+)\/toggle$/,
     handler: (state, _body, req) => toggleStrategy(state, getParam(new URL(req.url ?? "/", "http://local").pathname, /^\/api\/strategies\/([^/]+)\/toggle$/))
   },
+  { method: "POST", pattern: /^\/api\/strategies\/optimize$/, handler: (state) => optimizeStrategies(state) },
   {
     method: "POST",
     pattern: /^\/api\/orders$/,
@@ -186,6 +204,14 @@ const mutationRoutes: Array<{ method: string; pattern: RegExp; handler: Handler 
     method: "POST",
     pattern: /^\/api\/trading\/auto$/,
     handler: (state, body) => runAutoTrading(state, body as Parameters<typeof runAutoTrading>[1])
+  },
+  {
+    method: "POST",
+    pattern: /^\/api\/workflow\/run$/,
+    handler: async (state, body) => runOperationalWorkflow(
+      finalizeDataSync(await ingestRealMarketData(state), "一键闭环", "一键闭环自动爬取并同步真实行情"),
+      body as Parameters<typeof runOperationalWorkflow>[1]
+    )
   },
   { method: "POST", pattern: /^\/api\/orders\/execute$/, handler: (state) => executePendingOrders(state) },
   {
@@ -232,10 +258,14 @@ const readRoutes: Record<string, (state: QuantState) => unknown> = {
   "/api/data-provider-configs": (state) => state.dataProviderConfigs,
   "/api/data-quality-rules": (state) => state.dataQualityRules,
   "/api/data-subscriptions": (state) => state.dataSubscriptions,
+  "/api/data-sync-runs": (state) => state.dataSyncRuns,
+  "/api/data-aggregate-insights": (state) => state.dataAggregateInsights,
   "/api/factors": (state) => state.factors,
+  "/api/factor-configs": (state) => state.factorConfigs,
   "/api/mirofish/config": (state) => state.miroFishConfig,
   "/api/mirofish/scenarios": (state) => state.miroFishScenarios,
   "/api/strategies": (state) => state.strategies,
+  "/api/strategy-optimizations": (state) => state.strategyOptimizations,
   "/api/backtests": (state) => state.backtests,
   "/api/backtest-results": (state) => state.backtestResults,
   "/api/stock-signals": (state) => state.stockSignals,
@@ -291,7 +321,7 @@ server.listen(PORT, () => {
 async function runScheduledAutoTrader() {
   try {
     const state = await loadState();
-    const withMarketData = process.env.AUTO_TRADER_SYNC_MARKET === "false" ? state : await ingestRealMarketData(state);
+    const withMarketData = process.env.AUTO_TRADER_SYNC_MARKET === "false" ? state : finalizeDataSync(await ingestRealMarketData(state), "自动交易", "自动交易前置数据同步完成");
     const nextState = runAutoTrading(withMarketData, { execute: true });
     await saveState(nextState);
   } catch (error) {
@@ -301,7 +331,24 @@ async function runScheduledAutoTrader() {
   }
 }
 
+async function runScheduledDataSync() {
+  try {
+    const state = await loadState();
+    const nextState = finalizeDataSync(await ingestRealMarketData(state), "调度", "调度任务完成自动爬取、同步和聚合分析");
+    await saveState(nextState);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "unknown error";
+    const state = await loadState();
+    await saveState(appendLog(state, "数据处理", `数据同步调度失败：${message}`, "data-scheduler"));
+  }
+}
+
 if (AUTO_TRADER_INTERVAL_MS > 0) {
   setInterval(runScheduledAutoTrader, AUTO_TRADER_INTERVAL_MS);
   console.log(`Scheduled auto trader enabled every ${AUTO_TRADER_INTERVAL_MS}ms`);
+}
+
+if (AUTO_DATA_SYNC_INTERVAL_MS > 0) {
+  setInterval(runScheduledDataSync, AUTO_DATA_SYNC_INTERVAL_MS);
+  console.log(`Scheduled data sync enabled every ${AUTO_DATA_SYNC_INTERVAL_MS}ms`);
 }

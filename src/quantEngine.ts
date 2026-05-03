@@ -55,6 +55,30 @@ export interface DataSubscription {
   renewalDate: string;
 }
 
+export interface DataSyncRun {
+  id: string;
+  trigger: "手动" | "调度" | "自动交易" | "一键闭环";
+  status: Status;
+  providers: string[];
+  records: number;
+  qualityScore: number;
+  latency: number;
+  summary: string;
+  time: string;
+}
+
+export interface DataAggregateInsight {
+  id: string;
+  name: string;
+  scope: string;
+  value: number;
+  unit: string;
+  trend: "上升" | "下降" | "稳定";
+  status: Status;
+  detail: string;
+  updatedAt: string;
+}
+
 export interface Factor {
   id: string;
   name: string;
@@ -63,6 +87,19 @@ export interface Factor {
   winRate: number;
   signal: Signal;
   enabled: boolean;
+}
+
+export interface FactorConfig {
+  id: string;
+  factorName: string;
+  formula: string;
+  lookback: number;
+  weight: number;
+  universe: string;
+  rebalance: string;
+  enabled: boolean;
+  status: Status;
+  lastRun: string;
 }
 
 export interface MiroFishConfig {
@@ -106,6 +143,18 @@ export interface Strategy {
   riskLevel: "低" | "中" | "高";
 }
 
+export interface StrategyOptimization {
+  id: string;
+  strategy: string;
+  beforeSharpe: number;
+  afterSharpe: number;
+  suggestedFactors: string[];
+  capitalShift: number;
+  status: Status;
+  summary: string;
+  time: string;
+}
+
 export interface StockSignal {
   symbol: string;
   name: string;
@@ -141,6 +190,7 @@ export interface AutoTradeRun {
 
 export interface BacktestTask {
   id: string;
+  strategyId: string;
   strategy: string;
   universe: string;
   benchmark: string;
@@ -288,10 +338,14 @@ export interface QuantState {
   dataProviderConfigs: DataProviderConfig[];
   dataQualityRules: DataQualityRule[];
   dataSubscriptions: DataSubscription[];
+  dataSyncRuns: DataSyncRun[];
+  dataAggregateInsights: DataAggregateInsight[];
   factors: Factor[];
+  factorConfigs: FactorConfig[];
   miroFishConfig: MiroFishConfig;
   miroFishScenarios: MiroFishScenario[];
   strategies: Strategy[];
+  strategyOptimizations: StrategyOptimization[];
   stockSignals: StockSignal[];
   autoTradeRuns: AutoTradeRun[];
   backtests: BacktestTask[];
@@ -368,11 +422,23 @@ export function createInitialState(): QuantState {
       { id: "sub-4", provider: "Yahoo Finance", dataset: "日K/财务快照", level: "免费/半免费", frequency: "延迟/日频", markets: ["US", "CN"], owner: "研究员", cost: 0, status: "正常", renewalDate: "长期" },
       { id: "sub-5", provider: "X / Reddit / Reuters", dataset: "舆情/新闻/事件", level: "另类数据", frequency: "分钟/事件驱动", markets: ["Global"], owner: "Alpha研究", cost: 36000, status: "运行中", renewalDate: "2026-08-20" }
     ],
+    dataSyncRuns: [],
+    dataAggregateInsights: [
+      { id: "dai-1", name: "行情覆盖率", scope: "实时行情", value: 86, unit: "%", trend: "稳定", status: "正常", detail: "核心指数、A 股龙头和 ETF 已接入", updatedAt: "2024-05-24 14:30:00" },
+      { id: "dai-2", name: "订阅活跃度", scope: "数据订阅", value: 80, unit: "%", trend: "稳定", status: "正常", detail: "免费源、券商 API 和专业数据商组合可用", updatedAt: "2024-05-24 14:30:00" },
+      { id: "dai-3", name: "聚合质量分", scope: "数据湖", value: 98, unit: "分", trend: "稳定", status: "正常", detail: "清洗、完整性和及时性均通过", updatedAt: "2024-05-24 14:30:00" }
+    ],
     factors: [
       { id: "f-1", name: "Momentum_20D", ic: 0.086, icir: 1.23, winRate: 63.2, signal: "强", enabled: true },
       { id: "f-2", name: "Volatility_20D", ic: -0.032, icir: -0.56, winRate: 42.1, signal: "弱", enabled: true },
       { id: "f-3", name: "Turnover_5D", ic: -0.045, icir: -0.78, winRate: 38.6, signal: "弱", enabled: false },
       { id: "f-4", name: "Size_LN", ic: 0.012, icir: 0.21, winRate: 51.2, signal: "中", enabled: true }
+    ],
+    factorConfigs: [
+      { id: "fc-1", factorName: "Momentum_20D", formula: "close / delay(close, 20) - 1", lookback: 20, weight: 0.42, universe: "全A流动性池", rebalance: "日频", enabled: true, status: "正常", lastRun: "2024-05-24 14:30:00" },
+      { id: "fc-2", factorName: "Volatility_20D", formula: "stddev(return, 20)", lookback: 20, weight: 0.24, universe: "全A流动性池", rebalance: "日频", enabled: true, status: "正常", lastRun: "2024-05-24 14:30:00" },
+      { id: "fc-3", factorName: "Turnover_5D", formula: "mean(turnover, 5)", lookback: 5, weight: 0.18, universe: "沪深300成分股", rebalance: "日频", enabled: false, status: "暂停", lastRun: "-" },
+      { id: "fc-4", factorName: "Size_LN", formula: "ln(market_cap)", lookback: 1, weight: 0.16, universe: "全A流动性池", rebalance: "周频", enabled: true, status: "正常", lastRun: "2024-05-24 14:30:00" }
     ],
     miroFishConfig: {
       repoUrl: "https://github.com/666ghj/MiroFish",
@@ -424,11 +490,12 @@ export function createInitialState(): QuantState {
       { id: "s-4", name: "Market_Neutral_v3", type: "市场中性", status: "暂停", pnlToday: -0.12, pnlYear: 5.67, maxDrawdown: 3.21, factors: ["Volatility_20D"], capital: 18000000, riskLevel: "中" },
       { id: "s-5", name: "Event_Driven_v1", type: "事件驱动", status: "停止", pnlToday: 0, pnlYear: -2.34, maxDrawdown: 5.67, factors: ["Turnover_5D"], capital: 15000000, riskLevel: "高" }
     ],
+    strategyOptimizations: [],
     backtests: [
-      { id: "bt-20240524-001", strategy: "CTA_Trend_v2", universe: "沪深300期货", benchmark: "沪深300", period: "2021-01-01 至 2024-05-24", initialCapital: 20_000_000, progress: 75, status: "运行中", startTime: "05-24 10:00", sharpe: 1.62, annualReturn: 21.4, maxDrawdown: 8.1 },
-      { id: "bt-20240524-002", strategy: "Alpha_Momentum", universe: "沪深300成分股", benchmark: "沪深300", period: "2021-01-01 至 2024-05-24", initialCapital: 10_000_000, progress: 100, status: "已完成", startTime: "05-24 09:30", sharpe: 1.47, annualReturn: 18.8, maxDrawdown: 6.2 },
-      { id: "bt-20240524-003", strategy: "Stat_Arb_v1", universe: "中证500成分股", benchmark: "中证500", period: "2021-01-01 至 2024-05-24", initialCapital: 12_000_000, progress: 45, status: "运行中", startTime: "05-24 11:00", sharpe: 1.12, annualReturn: 12.9, maxDrawdown: 4.4 },
-      { id: "bt-20240524-004", strategy: "Market_Neutral_v3", universe: "全A流动性池", benchmark: "现金收益", period: "2020-01-01 至 2024-05-24", initialCapital: 15_000_000, progress: 0, status: "排队中", startTime: "05-24 11:30", sharpe: 0.92, annualReturn: 7.3, maxDrawdown: 3.2 }
+      { id: "bt-20240524-001", strategyId: "s-1", strategy: "CTA_Trend_v2", universe: "沪深300期货", benchmark: "沪深300", period: "2021-01-01 至 2024-05-24", initialCapital: 20_000_000, progress: 75, status: "运行中", startTime: "05-24 10:00", sharpe: 1.62, annualReturn: 21.4, maxDrawdown: 8.1 },
+      { id: "bt-20240524-002", strategyId: "s-2", strategy: "Alpha_Momentum", universe: "沪深300成分股", benchmark: "沪深300", period: "2021-01-01 至 2024-05-24", initialCapital: 10_000_000, progress: 100, status: "已完成", startTime: "05-24 09:30", sharpe: 1.47, annualReturn: 18.8, maxDrawdown: 6.2 },
+      { id: "bt-20240524-003", strategyId: "s-3", strategy: "Stat_Arb_v1", universe: "中证500成分股", benchmark: "中证500", period: "2021-01-01 至 2024-05-24", initialCapital: 12_000_000, progress: 45, status: "运行中", startTime: "05-24 11:00", sharpe: 1.12, annualReturn: 12.9, maxDrawdown: 4.4 },
+      { id: "bt-20240524-004", strategyId: "s-4", strategy: "Market_Neutral_v3", universe: "全A流动性池", benchmark: "现金收益", period: "2020-01-01 至 2024-05-24", initialCapital: 15_000_000, progress: 0, status: "排队中", startTime: "05-24 11:30", sharpe: 0.92, annualReturn: 7.3, maxDrawdown: 3.2 }
     ],
     backtestResults: [
       { id: "br-1", taskId: "bt-20240524-002", strategy: "Alpha_Momentum", benchmark: "沪深300", period: "2021-01-01 至 2024-05-24", annualReturn: 18.8, excessReturn: 9.4, sharpe: 1.47, volatility: 13.2, maxDrawdown: 6.2, winRate: 58.6, status: "已完成", completedAt: "2024-05-24 10:18" },
@@ -521,10 +588,14 @@ export function cloneState(state: QuantState): QuantState {
     dataProviderConfigs: (state.dataProviderConfigs ?? createInitialState().dataProviderConfigs).map((item) => ({ ...item, symbols: [...item.symbols] })),
     dataQualityRules: (state.dataQualityRules ?? createInitialState().dataQualityRules).map((item) => ({ ...item })),
     dataSubscriptions: (state.dataSubscriptions ?? createInitialState().dataSubscriptions).map((item) => ({ ...item, markets: [...item.markets] })),
+    dataSyncRuns: (state.dataSyncRuns ?? createInitialState().dataSyncRuns).map((item) => ({ ...item, providers: [...item.providers] })),
+    dataAggregateInsights: (state.dataAggregateInsights ?? createInitialState().dataAggregateInsights).map((item) => ({ ...item })),
     factors: state.factors.map((item) => ({ ...item })),
+    factorConfigs: (state.factorConfigs ?? createInitialState().factorConfigs).map((item) => ({ ...item })),
     miroFishConfig: { ...(state.miroFishConfig ?? createInitialState().miroFishConfig), dependencies: [...(state.miroFishConfig?.dependencies ?? createInitialState().miroFishConfig.dependencies)] },
     miroFishScenarios: (state.miroFishScenarios ?? createInitialState().miroFishScenarios).map((item) => ({ ...item })),
     strategies: state.strategies.map((item) => ({ ...item, factors: [...item.factors] })),
+    strategyOptimizations: (state.strategyOptimizations ?? createInitialState().strategyOptimizations).map((item) => ({ ...item, suggestedFactors: [...item.suggestedFactors] })),
     stockSignals: (state.stockSignals ?? createInitialState().stockSignals).map((item) => ({ ...item, reasons: [...item.reasons] })),
     autoTradeRuns: (state.autoTradeRuns ?? createInitialState().autoTradeRuns).map((item) => ({ ...item, riskNotes: [...(item.riskNotes ?? [])] })),
     backtests: state.backtests.map((item) => ({ ...item })),
@@ -572,6 +643,105 @@ function addLog(state: QuantState, module: string, action: string, operator = "s
     time: timeOnly(state.baseTime)
   });
   state.logs = state.logs.slice(0, 40);
+}
+
+function aggregateDataInsights(state: QuantState) {
+  const updatedAt = stamp(new Date());
+  const activeProviders = state.dataProviderConfigs.filter((item) => item.enabled && item.status !== "停止");
+  const activeSubscriptions = state.dataSubscriptions.filter((item) => item.status === "正常" || item.status === "运行中");
+  const totalRows = state.dataSources.reduce((sum, source) => sum + source.rows, 0);
+  const avgQuality = state.dataSources.reduce((sum, source) => sum + source.quality, 0) / Math.max(1, state.dataSources.length);
+  const avgLatency = state.dataSources.reduce((sum, source) => sum + source.latency, 0) / Math.max(1, state.dataSources.length);
+  const quoteCoverage = state.marketQuotes.filter((quote) => quote.price > 0).length;
+  const subscribedSources = state.dataSources.filter((source) => source.subscribed).length;
+  const coverageScore = clamp(Math.round((quoteCoverage / Math.max(8, activeProviders.reduce((sum, item) => sum + item.symbols.length, 0))) * 100), 0, 100);
+  const subscriptionScore = clamp(Math.round((activeSubscriptions.length / Math.max(1, state.dataSubscriptions.length)) * 100), 0, 100);
+  const lakeScore = clamp(Math.round(avgQuality - Math.max(0, avgLatency - 80) / 12), 0, 100);
+
+  state.dataAggregateInsights = [
+    {
+      id: "dai-coverage",
+      name: "行情覆盖率",
+      scope: "实时行情",
+      value: coverageScore,
+      unit: "%",
+      trend: coverageScore >= (state.dataAggregateInsights.find((item) => item.id === "dai-coverage")?.value ?? coverageScore) ? "上升" : "下降",
+      status: coverageScore >= 70 ? "正常" : "告警",
+      detail: `${quoteCoverage} 个有效行情标的，${activeProviders.length} 个采集接口启用`,
+      updatedAt
+    },
+    {
+      id: "dai-subscription",
+      name: "订阅活跃度",
+      scope: "数据订阅",
+      value: subscriptionScore,
+      unit: "%",
+      trend: activeSubscriptions.length >= 3 ? "稳定" : "下降",
+      status: subscriptionScore >= 60 ? "正常" : "运行中",
+      detail: `${activeSubscriptions.length}/${state.dataSubscriptions.length} 个订阅活跃，${subscribedSources}/${state.dataSources.length} 个数据源订阅`,
+      updatedAt
+    },
+    {
+      id: "dai-quality",
+      name: "聚合质量分",
+      scope: "数据湖",
+      value: lakeScore,
+      unit: "分",
+      trend: avgQuality >= 97 ? "稳定" : "下降",
+      status: lakeScore >= 95 ? "正常" : lakeScore >= 90 ? "运行中" : "告警",
+      detail: `累计 ${formatCurrency(totalRows)} 行，平均质量 ${avgQuality.toFixed(1)}%，平均延迟 ${Math.round(avgLatency)}ms`,
+      updatedAt
+    },
+    {
+      id: "dai-alpha",
+      name: "Alpha 可用度",
+      scope: "因子与信号",
+      value: clamp(Math.round((state.factors.filter((factor) => factor.enabled).length * 16) + state.stockSignals.filter((signal) => signal.action === "买入" || signal.action === "候选").length * 4), 0, 100),
+      unit: "%",
+      trend: "稳定",
+      status: state.stockSignals.length > 0 ? "正常" : "运行中",
+      detail: `${state.factors.filter((factor) => factor.enabled).length} 个启用因子，${state.stockSignals.length} 条信号`,
+      updatedAt
+    }
+  ];
+}
+
+function recordDataSyncRun(state: QuantState, trigger: DataSyncRun["trigger"], summary: string) {
+  const activeProviders = state.dataProviderConfigs.filter((item) => item.enabled);
+  const records = state.marketQuotes.length + state.dataSources.reduce((sum, source) => sum + Math.max(0, Math.round(source.rows / 1_000_000)), 0);
+  const qualityScore = Number((state.dataSources.reduce((sum, source) => sum + source.quality, 0) / Math.max(1, state.dataSources.length)).toFixed(1));
+  const latency = Math.round(state.dataSources.reduce((sum, source) => sum + source.latency, 0) / Math.max(1, state.dataSources.length));
+  const status: Status = qualityScore >= 95 ? "已完成" : "告警";
+  state.dataSyncRuns = [
+    {
+      id: `dsr-${Date.now()}-${localIdSequence++}`,
+      trigger,
+      status,
+      providers: activeProviders.map((item) => item.name),
+      records,
+      qualityScore,
+      latency,
+      summary,
+      time: stamp(new Date())
+    },
+    ...state.dataSyncRuns
+  ].slice(0, 20);
+}
+
+export function finalizeDataSync(state: QuantState, trigger: DataSyncRun["trigger"] = "手动", summary = "数据同步、清洗、聚合分析完成"): QuantState {
+  const next = cloneState(state);
+  const syncedAt = stamp(new Date());
+  next.dataProviderConfigs = next.dataProviderConfigs.map((config) => config.enabled
+    ? { ...config, status: "正常", lastSync: syncedAt }
+    : { ...config, status: config.status === "停止" ? "停止" : "暂停" });
+  next.dataSubscriptions = next.dataSubscriptions.map((subscription) => {
+    if (subscription.status === "暂停") return subscription;
+    return { ...subscription, status: subscription.cost > 0 ? "正常" : "运行中" };
+  });
+  aggregateDataInsights(next);
+  recordDataSyncRun(next, trigger, summary);
+  addLog(next, "数据处理", summary, trigger === "调度" ? "data-scheduler" : "data-pipeline");
+  return next;
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -885,6 +1055,7 @@ export function runDataQualityCheck(state: QuantState): QuantState {
     const score = matchedRules.length > 0 ? matchedRules.reduce((sum, rule) => sum + rule.score, 0) / matchedRules.length : source.quality;
     return { ...source, quality: Number(Math.min(100, Math.max(88, score)).toFixed(1)) };
   });
+  aggregateDataInsights(next);
   addLog(next, "数据中心", "完成数据完整性、准确性、及时性和一致性质量巡检", "quant_admin");
   return next;
 }
@@ -951,20 +1122,86 @@ export function toggleFactor(state: QuantState, factorId: string): QuantState {
 
 export function upsertFactor(state: QuantState, input: Partial<Factor> & Pick<Factor, "name">): QuantState {
   const next = cloneState(state);
-  const id = input.id ?? `f-${Date.now()}`;
-  const ic = Number(input.ic ?? 0);
+  const existingFactor = next.factors.find((item) => item.id === input.id || (!input.id && item.name === input.name));
+  const id = existingFactor?.id ?? input.id ?? `f-${Date.now()}`;
+  const ic = Number(input.ic ?? existingFactor?.ic ?? 0);
   const factor: Factor = {
     id,
     name: input.name,
     ic,
-    icir: Number(input.icir ?? 0),
-    winRate: Number(input.winRate ?? 50),
-    signal: input.signal ?? (ic > 0.06 ? "强" : ic > 0 ? "中" : "弱"),
-    enabled: Boolean(input.enabled ?? true)
+    icir: Number(input.icir ?? existingFactor?.icir ?? 0),
+    winRate: Number(input.winRate ?? existingFactor?.winRate ?? 50),
+    signal: input.signal ?? existingFactor?.signal ?? (ic > 0.06 ? "强" : ic > 0 ? "中" : "弱"),
+    enabled: Boolean(input.enabled ?? existingFactor?.enabled ?? true)
   };
-  const exists = next.factors.some((item) => item.id === id);
+  const exists = Boolean(existingFactor);
   next.factors = exists ? next.factors.map((item) => item.id === id ? factor : item) : [factor, ...next.factors];
+  if (!next.factorConfigs.some((item) => item.factorName === factor.name)) {
+    next.factorConfigs = [{
+      id: `fc-${Date.now()}`,
+      factorName: factor.name,
+      formula: "custom_factor(close, volume, sentiment)",
+      lookback: 20,
+      weight: 0.2,
+      universe: "全A流动性池",
+      rebalance: "日频",
+      enabled: factor.enabled,
+      status: factor.enabled ? "正常" : "暂停",
+      lastRun: "-"
+    }, ...next.factorConfigs];
+  }
   addLog(next, "策略研究", `${exists ? "更新" : "新增"}因子 ${factor.name}`, "researcher_a");
+  return next;
+}
+
+export function upsertFactorConfig(state: QuantState, input: Partial<FactorConfig> & { factorName?: string; name?: string }): QuantState {
+  const next = cloneState(state);
+  const factorName = input.factorName ?? input.name ?? "Custom_Factor";
+  const existingConfig = next.factorConfigs.find((item) => item.id === input.id || (!input.id && item.factorName === factorName));
+  const id = existingConfig?.id ?? input.id ?? `fc-${Date.now()}`;
+  const config: FactorConfig = {
+    id,
+    factorName,
+    formula: input.formula ?? existingConfig?.formula ?? "custom_factor(close, volume)",
+    lookback: Number(input.lookback ?? existingConfig?.lookback ?? 20),
+    weight: Number(input.weight ?? existingConfig?.weight ?? 0.2),
+    universe: input.universe ?? existingConfig?.universe ?? "全A流动性池",
+    rebalance: input.rebalance ?? existingConfig?.rebalance ?? "日频",
+    enabled: Boolean(input.enabled ?? existingConfig?.enabled ?? true),
+    status: input.enabled === false ? "暂停" : input.status ?? existingConfig?.status ?? "正常",
+    lastRun: input.lastRun ?? existingConfig?.lastRun ?? "-"
+  };
+  const exists = Boolean(existingConfig);
+  next.factorConfigs = exists ? next.factorConfigs.map((item) => item.id === id ? config : item) : [config, ...next.factorConfigs];
+  if (!next.factors.some((factor) => factor.name === config.factorName)) {
+    next.factors = [{
+      id: `f-${Date.now()}`,
+      name: config.factorName,
+      ic: 0,
+      icir: 0,
+      winRate: 50,
+      signal: "中",
+      enabled: config.enabled
+    }, ...next.factors];
+  } else {
+    next.factors = next.factors.map((factor) => factor.name === config.factorName ? { ...factor, enabled: config.enabled } : factor);
+  }
+  addLog(next, "策略研究", `${exists ? "更新" : "新增"}因子配置 ${config.factorName}`, "researcher_a");
+  return next;
+}
+
+export function toggleFactorConfig(state: QuantState, id: string): QuantState {
+  const next = cloneState(state);
+  next.factorConfigs = next.factorConfigs.map((config) => {
+    if (config.id !== id) return config;
+    const enabled = !config.enabled;
+    addLog(next, "策略研究", `${enabled ? "启用" : "停用"}因子配置 ${config.factorName}`, "researcher_a");
+    return { ...config, enabled, status: enabled ? "正常" : "暂停" };
+  });
+  const config = next.factorConfigs.find((item) => item.id === id);
+  if (config) {
+    next.factors = next.factors.map((factor) => factor.name === config.factorName ? { ...factor, enabled: config.enabled } : factor);
+  }
   return next;
 }
 
@@ -1037,8 +1274,9 @@ export function publishMiroFishFactor(state: QuantState, scenarioId: string): Qu
   if (!scenario) return next;
   const factorName = `MiroFish_${scenario.title.replace(/\s+/g, "_").slice(0, 18)}`;
   const ic = Number((scenario.predictedImpact / 20).toFixed(3));
+  const existingFactor = next.factors.find((item) => item.name === factorName);
   const factor: Factor = {
-    id: `f-mf-${Date.now()}`,
+    id: existingFactor?.id ?? `f-mf-${Date.now()}`,
     name: factorName,
     ic,
     icir: Number((ic * 12).toFixed(2)),
@@ -1046,7 +1284,21 @@ export function publishMiroFishFactor(state: QuantState, scenarioId: string): Qu
     signal: ic > 0.06 ? "强" : ic > 0 ? "中" : "弱",
     enabled: true
   };
-  next.factors = [factor, ...next.factors];
+  next.factors = existingFactor ? next.factors.map((item) => item.id === factor.id ? factor : item) : [factor, ...next.factors];
+  if (!next.factorConfigs.some((item) => item.factorName === factorName)) {
+    next.factorConfigs = [{
+      id: `fc-mf-${Date.now()}`,
+      factorName,
+      formula: "mirofish_impact(sentiment, confidence, event_diffusion)",
+      lookback: 5,
+      weight: 0.22,
+      universe: "全A事件驱动池",
+      rebalance: "日频",
+      enabled: true,
+      status: "正常",
+      lastRun: "-"
+    }, ...next.factorConfigs];
+  }
   next.miroFishScenarios = next.miroFishScenarios.map((item) => item.id === scenarioId ? { ...item, linkedFactor: factorName } : item);
   addLog(next, "策略研究", `将 MiroFish 推演结果发布为因子 ${factorName}`, "researcher_a");
   return next;
@@ -1167,14 +1419,17 @@ export function runDataPipeline(state: QuantState): QuantState {
   }));
   next.marketSeries.push(next.marketSeries[next.marketSeries.length - 1] + 0.6);
   next.marketSeries = next.marketSeries.slice(-13);
-  addLog(next, "数据处理", "完成实时流接入、去重补全、特征入库与数据服务发布");
-  return next;
+  return finalizeDataSync(next, "手动", "完成自动爬取、实时流接入、去重补全、特征入库与数据服务发布");
 }
 
 export function computeFactors(state: QuantState): QuantState {
   const next = cloneState(state);
+  const enabledConfigs = next.factorConfigs.filter((config) => config.enabled);
+  const totalWeight = enabledConfigs.reduce((sum, config) => sum + config.weight, 0) || 1;
   next.factors = next.factors.map((factor, index) => {
-    const delta = index % 2 === 0 ? 0.007 : -0.004;
+    const config = enabledConfigs.find((item) => item.factorName === factor.name);
+    const configBias = config ? (config.weight / totalWeight) * 0.014 : -0.003;
+    const delta = index % 2 === 0 ? 0.007 + configBias : -0.004 + configBias / 2;
     const ic = Number((factor.ic + delta).toFixed(3));
     return {
       ...factor,
@@ -1184,6 +1439,12 @@ export function computeFactors(state: QuantState): QuantState {
       signal: ic > 0.06 ? "强" : ic > 0 ? "中" : "弱"
     };
   });
+  next.factorConfigs = next.factorConfigs.map((config) => ({
+    ...config,
+    status: config.enabled ? "正常" : "暂停",
+    lastRun: config.enabled ? stamp(new Date()) : config.lastRun
+  }));
+  aggregateDataInsights(next);
   addLog(next, "策略研究", "完成因子计算、特征提取和因子库更新", "researcher_a");
   return next;
 }
@@ -1194,6 +1455,7 @@ export function createBacktest(state: QuantState, input: string | { strategyId?:
   const strategy = next.strategies.find((item) => item.id === strategyId) ?? next.strategies[0];
   next.backtests.unshift({
     id: `bt-${Date.now().toString().slice(-8)}`,
+    strategyId: strategy.id,
     strategy: strategy.name,
     universe: typeof input === "string" ? "全A流动性池" : input.universe ?? "全A流动性池",
     benchmark: typeof input === "string" ? "沪深300" : input.benchmark ?? "沪深300",
@@ -1259,12 +1521,73 @@ export function toggleStrategy(state: QuantState, strategyId: string): QuantStat
   return next;
 }
 
+export function optimizeStrategies(state: QuantState): QuantState {
+  const next = cloneState(state);
+  const rankedFactors = next.factors
+    .filter((factor) => factor.enabled)
+    .sort((a, b) => (b.ic * b.icir + b.winRate / 100) - (a.ic * a.icir + a.winRate / 100))
+    .filter((factor, index, factors) => factors.findIndex((item) => item.name === factor.name) === index)
+    .slice(0, 3);
+  const bestResultByStrategy = new Map<string, BacktestResult>();
+  next.backtestResults.forEach((result) => {
+    const existing = bestResultByStrategy.get(result.strategy);
+    if (!existing || result.sharpe > existing.sharpe) bestResultByStrategy.set(result.strategy, result);
+  });
+
+  const records: StrategyOptimization[] = [];
+  next.strategies = next.strategies.map((strategy, index) => {
+    const result = bestResultByStrategy.get(strategy.name);
+    const beforeSharpe = result?.sharpe ?? Number((1 + strategy.pnlYear / 80 - strategy.maxDrawdown / 60).toFixed(2));
+    const factorBoost = rankedFactors.reduce((sum, factor) => sum + Math.max(0, factor.ic), 0);
+    const afterSharpe = Number((beforeSharpe + 0.08 + factorBoost).toFixed(2));
+    const capitalShift = Math.round((afterSharpe - beforeSharpe) * 1_000_000);
+    const suggestedFactors = rankedFactors.map((factor) => factor.name);
+    records.push({
+      id: `so-${Date.now()}-${index}`,
+      strategy: strategy.name,
+      beforeSharpe,
+      afterSharpe,
+      suggestedFactors,
+      capitalShift,
+      status: afterSharpe > beforeSharpe ? "已完成" : "运行中",
+      summary: `建议因子 ${suggestedFactors.join(" / ")}，目标夏普 ${afterSharpe}`,
+      time: stamp(new Date())
+    });
+    return {
+      ...strategy,
+      factors: suggestedFactors.length > 0 ? suggestedFactors : strategy.factors,
+      pnlYear: Number((strategy.pnlYear + Math.max(0, afterSharpe - beforeSharpe) * 2.6).toFixed(2)),
+      maxDrawdown: Number(Math.max(2.5, strategy.maxDrawdown - Math.max(0, afterSharpe - beforeSharpe) * 0.8).toFixed(2)),
+      riskLevel: afterSharpe >= 1.45 ? "低" : strategy.riskLevel
+    };
+  });
+  next.strategyOptimizations = [...records, ...next.strategyOptimizations].slice(0, 20);
+  addLog(next, "策略研究", `完成 ${records.length} 个策略库参数和因子组合调优`, "strategy-optimizer");
+  return refreshRisk(next);
+}
+
 export function runSignalSelection(state: QuantState): QuantState {
   const next = cloneState(state);
   next.stockSignals = buildStockSignals(next);
   const buyCount = next.stockSignals.filter((signal) => signal.action === "买入").length;
   const candidateCount = next.stockSignals.filter((signal) => signal.action === "候选").length;
   addLog(next, "策略研究", `根据信号自动选股完成：买入 ${buyCount} 个，候选 ${candidateCount} 个`, "signal-engine");
+  return next;
+}
+
+export function runOperationalWorkflow(state: QuantState, input: { strategyId?: string; execute?: boolean } = {}): QuantState {
+  const strategyId = input.strategyId ?? state.strategies[0]?.id;
+  let next = finalizeDataSync(state, "一键闭环", "一键闭环启动：数据同步与聚合分析完成");
+  next = runDataQualityCheck(next);
+  next = computeFactors(next);
+  next = advanceMiroFishScenarios(next);
+  next = optimizeStrategies(next);
+  next = createBacktest(next, strategyId ?? "");
+  next = advanceBacktests(next);
+  next = runSignalSelection(next);
+  next = runAutoTrading(next, { strategyId, execute: input.execute ?? true });
+  next = refreshRisk(next);
+  addLog(next, "系统管理", "一键闭环完成：数据、因子、推演、调优、回测、选股、交易与风险刷新已执行", "workflow");
   return next;
 }
 

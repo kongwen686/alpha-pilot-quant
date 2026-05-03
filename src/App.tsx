@@ -48,11 +48,14 @@ import {
   sumCapital,
   type BacktestTask,
   type BacktestResult,
+  type DataAggregateInsight,
   type DataProviderConfig,
   type DataQualityRule,
   type DataSource,
   type DataSubscription,
+  type DataSyncRun,
   type Factor,
+  type FactorConfig,
   type MiroFishScenario,
   type Order,
   type Position,
@@ -64,6 +67,7 @@ import {
   type Status,
   type StockSignal,
   type Strategy,
+  type StrategyOptimization,
   type SystemConfig,
   type AutoTradeRun,
   type User as QuantUser
@@ -292,6 +296,7 @@ function App() {
               <button onClick={() => apply(() => api.runAutoTrading({ strategyId: selectedStrategy, execute: true }))}><Send size={15} />自动交易</button>
               <button onClick={() => apply(() => api.createBacktest(selectedStrategy))}><Play size={15} />新建回测</button>
               <button onClick={() => apply(api.refreshRisk)}><Shield size={15} />风险刷新</button>
+              <button onClick={() => apply(() => api.runWorkflow({ strategyId: selectedStrategy, execute: true }))}><GitBranch size={15} />一键闭环</button>
             </div>
           </div>
           {error && <div className="api-error">{error}</div>}
@@ -393,6 +398,12 @@ function DataCenter({ view, state, apply }: { view: ViewId; state: QuantState; a
         <Panel title="数据仓库指标">
           <DataSnapshot state={state} expanded />
         </Panel>
+        <Panel title="数据源聚合分析">
+          <DataAggregatePanel insights={state.dataAggregateInsights} />
+        </Panel>
+        <Panel title="自动同步记录">
+          <DataSyncRunTable runs={state.dataSyncRuns} />
+        </Panel>
         <Panel title="数据源状态">
           <DataSourceTable data={state.dataSources} apply={apply} />
         </Panel>
@@ -419,6 +430,9 @@ function DataCenter({ view, state, apply }: { view: ViewId; state: QuantState; a
           <ProviderConfigForm apply={apply} />
           <ProviderConfigTable configs={state.dataProviderConfigs} apply={apply} />
         </Panel>
+        <Panel title="同步运行记录">
+          <DataSyncRunTable runs={state.dataSyncRuns} />
+        </Panel>
       </div>
     );
   }
@@ -439,6 +453,9 @@ function DataCenter({ view, state, apply }: { view: ViewId; state: QuantState; a
       <Panel title="数据订阅台账" action={<button onClick={() => apply(api.runDataPipeline)}>同步订阅源</button>}>
         <SubscriptionTable subscriptions={state.dataSubscriptions} apply={apply} />
       </Panel>
+      <Panel title="订阅聚合分析">
+        <DataAggregatePanel insights={state.dataAggregateInsights} />
+      </Panel>
       <Panel title="新增订阅">
         <SubscriptionForm apply={apply} />
         <ProviderConfigTable configs={state.dataProviderConfigs} apply={apply} />
@@ -456,6 +473,10 @@ function Research({ view, state, apply }: { view: ViewId; state: QuantState; app
         </Panel>
         <Panel title="新增因子">
           <FactorForm apply={apply} />
+        </Panel>
+        <Panel title="因子配置">
+          <FactorConfigTable configs={state.factorConfigs} apply={apply} />
+          <FactorConfigForm apply={apply} />
         </Panel>
         <Panel title="研究流水线">
           <Pipeline steps={["JupyterLab", "因子挖掘", "因子检验", "因子库", "特征存储"]} />
@@ -496,9 +517,14 @@ function Research({ view, state, apply }: { view: ViewId; state: QuantState; app
     );
   }
   return (
-    <Panel title="策略库" action={<button onClick={() => apply(() => api.generateOrder(state.strategies[0].id))}><Send size={14} />生成信号</button>}>
-      <StrategyTable strategies={state.strategies} apply={apply} />
-    </Panel>
+    <div className="content-grid two">
+      <Panel title="策略库" action={<button onClick={() => apply(api.optimizeStrategies)}><SlidersHorizontal size={14} />策略调优</button>}>
+        <StrategyTable strategies={state.strategies} apply={apply} />
+      </Panel>
+      <Panel title="调优记录">
+        <StrategyOptimizationTable records={state.strategyOptimizations} />
+      </Panel>
+    </div>
   );
 }
 
@@ -793,6 +819,24 @@ function StrategyTable({ strategies, apply, compact }: { strategies: Strategy[];
   );
 }
 
+function StrategyOptimizationTable({ records }: { records: StrategyOptimization[] }) {
+  if (records.length === 0) return <p className="empty">暂无调优记录</p>;
+  return (
+    <div className="table">
+      <div className="thead six"><span>时间</span><span>策略</span><span>夏普变化</span><span>资金调整</span><span>建议因子</span><span>状态</span></div>
+      {records.slice(0, 8).map((record) => (
+        <div className="trow six" key={record.id}>
+          <span>{record.time}</span><span>{record.strategy}</span>
+          <span className={record.afterSharpe >= record.beforeSharpe ? "up" : "down"}>{record.beforeSharpe} → {record.afterSharpe}</span>
+          <span>{formatCurrency(record.capitalShift)}</span>
+          <span>{record.suggestedFactors.join(" / ")}<small>{record.summary}</small></span>
+          <Badge status={record.status} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function TradeSummary({ state, apply, expanded }: { state: QuantState; apply: ApplyAction; expanded?: boolean }) {
   const pending = state.orders.filter((item) => item.status === "待执行").length;
   const filled = state.orders.filter((item) => item.status === "已成交").length;
@@ -897,6 +941,49 @@ function FactorForm({ apply }: { apply: ApplyAction }) {
   );
 }
 
+function FactorConfigTable({ configs, apply }: { configs: FactorConfig[]; apply: ApplyAction }) {
+  return (
+    <div className="table">
+      <div className="thead six"><span>因子</span><span>公式</span><span>窗口</span><span>权重</span><span>范围/频率</span><span>操作</span></div>
+      {configs.map((config) => (
+        <div className="trow six" key={config.id}>
+          <span>{config.factorName}<small>{config.lastRun}</small></span>
+          <span>{config.formula}</span><span>{config.lookback}D</span><span>{config.weight}</span>
+          <span>{config.universe}<small>{config.rebalance}</small></span>
+          <span className="row-actions">
+            <Badge status={config.status} />
+            <button onClick={() => apply(() => api.toggleFactorConfig(config.id))}>{config.enabled ? "停用" : "启用"}</button>
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function FactorConfigForm({ apply }: { apply: ApplyAction }) {
+  const [form, setForm] = useState({ factorName: "Liquidity_Shock_10D", formula: "zscore(amount, 10) * -return_1d", lookback: "10", weight: "0.2", universe: "全A流动性池", rebalance: "日频" });
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    apply(() => api.saveFactorConfig({
+      ...form,
+      lookback: Number(form.lookback),
+      weight: Number(form.weight),
+      enabled: true
+    }));
+  };
+  return (
+    <form className="inline-form" onSubmit={submit}>
+      <label>因子名称<input value={form.factorName} onChange={(event) => setForm({ ...form, factorName: event.target.value })} /></label>
+      <label>窗口<input value={form.lookback} onChange={(event) => setForm({ ...form, lookback: event.target.value })} /></label>
+      <label>权重<input value={form.weight} onChange={(event) => setForm({ ...form, weight: event.target.value })} /></label>
+      <label>调仓<input value={form.rebalance} onChange={(event) => setForm({ ...form, rebalance: event.target.value })} /></label>
+      <label>股票池<input value={form.universe} onChange={(event) => setForm({ ...form, universe: event.target.value })} /></label>
+      <label className="wide-field">公式<input value={form.formula} onChange={(event) => setForm({ ...form, formula: event.target.value })} /></label>
+      <button type="submit"><FlaskConical size={14} />保存配置</button>
+    </form>
+  );
+}
+
 function MiroFishScenarioTable({ scenarios, apply }: { scenarios: MiroFishScenario[]; apply: ApplyAction }) {
   return (
     <div className="table">
@@ -977,12 +1064,44 @@ function MiroFishConfigPanel({ state, apply }: { state: QuantState; apply: Apply
 function DataSnapshot({ state, expanded }: { state: QuantState; expanded?: boolean }) {
   const totalRows = state.dataSources.reduce((sum, item) => sum + item.rows, 0);
   const normal = state.dataSources.filter((item) => item.status === "正常").length;
+  const lastSync = state.dataSyncRuns[0]?.time ?? state.dataSources[0]?.latestUpdate ?? "-";
   return (
     <div className={`snapshot ${expanded ? "expanded" : ""}`}>
       <Metric title="数据源" value={state.dataSources.length + 7} delta={`正常 ${normal} 异常 ${state.dataSources.length - normal}`} icon={Database} />
-      <Metric title="数据表" value={256} delta="+12 本月新增" icon={Table2} />
+      <Metric title="采集接口" value={state.dataProviderConfigs.filter((item) => item.enabled).length} delta={`${state.dataSubscriptions.filter((item) => item.status !== "暂停").length} 个订阅活跃`} icon={Table2} />
       <Metric title="数据量" value="2.35 TB" delta={`+${Math.round(totalRows / 100000)} GB 今日`} icon={HardDrive} />
-      <Metric title="数据更新" value="2024-05-24 14:30:00" delta="最新更新" icon={RefreshCw} />
+      <Metric title="数据更新" value={lastSync} delta="最新同步" icon={RefreshCw} />
+    </div>
+  );
+}
+
+function DataAggregatePanel({ insights }: { insights: DataAggregateInsight[] }) {
+  return (
+    <div className="insight-grid">
+      {insights.map((insight) => (
+        <div className="insight-card" key={insight.id}>
+          <div><strong>{insight.name}</strong><Badge status={insight.status} /></div>
+          <b className={insight.trend === "下降" ? "down" : "up"}>{insight.value}{insight.unit}</b>
+          <span>{insight.scope} · {insight.trend}</span>
+          <small>{insight.detail}</small>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DataSyncRunTable({ runs }: { runs: DataSyncRun[] }) {
+  if (runs.length === 0) return <p className="empty">暂无同步记录</p>;
+  return (
+    <div className="table">
+      <div className="thead six"><span>时间</span><span>触发</span><span>状态</span><span>接口/记录</span><span>质量/延迟</span><span>摘要</span></div>
+      {runs.slice(0, 6).map((run) => (
+        <div className="trow six" key={run.id}>
+          <span>{run.time}</span><span>{run.trigger}</span><Badge status={run.status} />
+          <span>{run.providers.length} / {run.records}<small>{run.providers.slice(0, 2).join("、") || "无启用接口"}</small></span>
+          <span>{run.qualityScore}% / {run.latency}ms</span><span>{run.summary}</span>
+        </div>
+      ))}
     </div>
   );
 }

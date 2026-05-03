@@ -629,6 +629,38 @@ button {
   margin-bottom: 12px;
 }
 
+.insight-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.insight-card {
+  min-height: 116px;
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(143, 164, 191, 0.07);
+}
+
+.insight-card div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.insight-card b {
+  font-size: 24px;
+}
+
+.insight-card span,
+.insight-card small {
+  color: var(--muted);
+}
+
 .signal-reasons {
   color: #c7d8f2;
   line-height: 1.4;
@@ -1020,6 +1052,7 @@ button {
   .inline-form,
   .trade-metrics,
   .automation-status,
+  .insight-grid,
   .snapshot,
   .snapshot.expanded,
   .risk-metrics,

@@ -75,6 +75,14 @@ export function toggleFactor(id: string) {
   return patch(`/api/factors/${encodeURIComponent(id)}/toggle`);
 }
 
+export function saveFactorConfig(config: unknown) {
+  return post("/api/factor-configs", config);
+}
+
+export function toggleFactorConfig(id: string) {
+  return patch(`/api/factor-configs/${encodeURIComponent(id)}/toggle`);
+}
+
 export function saveMiroFishConfig(config: unknown) {
   return post("/api/mirofish/config", config);
 }
@@ -107,6 +115,10 @@ export function toggleStrategy(strategyId: string) {
   return patch(`/api/strategies/${encodeURIComponent(strategyId)}/toggle`);
 }
 
+export function optimizeStrategies() {
+  return post("/api/strategies/optimize");
+}
+
 export function generateOrder(strategyId: string) {
   return post("/api/orders", { strategyId });
 }
@@ -117,6 +129,10 @@ export function runSignalSelection() {
 
 export function runAutoTrading(input?: { strategyId?: string; execute?: boolean; minScore?: number; maxOrders?: number }) {
   return post("/api/trading/auto", input ?? {});
+}
+
+export function runWorkflow(input?: { strategyId?: string; execute?: boolean }) {
+  return post("/api/workflow/run", input ?? {});
 }
 
 export function executePendingOrders() {
