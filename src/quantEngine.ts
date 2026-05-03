@@ -634,6 +634,67 @@ function timeOnly(date: Date) {
   return date.toLocaleTimeString("zh-CN", { hour12: false });
 }
 
+const aShareHolidayRanges2026 = [
+  { name: "元旦休市", start: "2026-01-01", end: "2026-01-01" },
+  { name: "春节休市", start: "2026-02-16", end: "2026-02-23" },
+  { name: "清明节休市", start: "2026-04-04", end: "2026-04-06" },
+  { name: "劳动节休市", start: "2026-05-01", end: "2026-05-05" },
+  { name: "端午节休市", start: "2026-06-19", end: "2026-06-21" },
+  { name: "中秋节休市", start: "2026-09-25", end: "2026-09-27" },
+  { name: "国庆节休市", start: "2026-10-01", end: "2026-10-08" }
+];
+
+function dateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function minutesOfDay(date: Date) {
+  return date.getHours() * 60 + date.getMinutes();
+}
+
+function getAShareTradingSession(date: Date) {
+  const key = dateKey(date);
+  const holiday = aShareHolidayRanges2026.find((item) => key >= item.start && key <= item.end);
+  if (holiday) return { open: false, reason: holiday.name };
+  const weekday = date.getDay();
+  if (weekday === 0 || weekday === 6) return { open: false, reason: "周末休市" };
+  const minutes = minutesOfDay(date);
+  const inMorning = minutes >= 9 * 60 + 30 && minutes < 11 * 60 + 30;
+  const inAfternoon = minutes >= 13 * 60 && minutes < 15 * 60;
+  if (!inMorning && !inAfternoon) return { open: false, reason: "非交易时段" };
+  return { open: true, reason: "连续竞价时段" };
+}
+
+function appendOrderReason(order: Order, reason: string) {
+  return order.reason?.includes(reason) ? order.reason : order.reason ? `${order.reason}；${reason}` : reason;
+}
+
+function isContinuousTradingTimeLabel(time: string) {
+  const [hourText, minuteText] = time.split(":");
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return true;
+  const minutes = hour * 60 + minute;
+  return (minutes >= 9 * 60 + 30 && minutes < 11 * 60 + 30) || (minutes >= 13 * 60 && minutes < 15 * 60);
+}
+
+export function normalizeOrderTradingCalendar(state: QuantState): QuantState {
+  const next = cloneState(state);
+  const tradingSession = getAShareTradingSession(next.baseTime);
+  next.orders = next.orders.map((order) => {
+    if (order.status !== "已成交") return order;
+    const offSessionTime = order.time ? !isContinuousTradingTimeLabel(order.time) : false;
+    const filledOnClosedDay = !tradingSession.open;
+    if (!offSessionTime && !filledOnClosedDay) return order;
+    const reason = offSessionTime ? "交易日历复核：非交易时段，撤回成交状态" : `交易日历复核：A股${tradingSession.reason}，撤回成交状态`;
+    return { ...order, status: "待执行", reason: appendOrderReason(order, reason) };
+  });
+  return next;
+}
+
 function addLog(state: QuantState, module: string, action: string, operator = "system") {
   state.logs.unshift({
     id: `log-${Date.now()}-${localIdSequence++}`,
@@ -1603,6 +1664,7 @@ export function runAutoTrading(
   const maxOrders = Math.max(1, Number(input.maxOrders ?? next.systemConfig.maxAutoOrders ?? 3));
   const maxPositionWeight = Number(next.systemConfig.maxPositionWeight ?? 24);
   const riskLimit = getRiskLimit(next.systemConfig);
+  const tradingSession = getAShareTradingSession(next.baseTime);
   const pendingSymbols = new Set(next.orders.filter((order) => order.status === "待执行" || order.status === "部分成交").map((order) => order.symbol));
   const signalsBySymbol = new Map(next.stockSignals.map((signal) => [signal.symbol, signal]));
   const holdingWeights = new Map(next.positions.map((position) => [position.symbol, position.weight]));
@@ -1611,6 +1673,7 @@ export function runAutoTrading(
   if (!enabled) riskNotes.push("自动交易未启用");
   if (!strategy) riskNotes.push("未找到可用策略");
   if (next.riskScore >= riskLimit) riskNotes.push(`风险评分 ${next.riskScore} 超过 ${riskLimit}，阻断新增买入`);
+  if (input.execute && !tradingSession.open) riskNotes.push(`当前 A 股${tradingSession.reason}，委托保留待执行，不进行撮合成交`);
 
   const sellOrders = enabled && strategy
     ? buildReduceOrders(next, strategy, signalsBySymbol, pendingSymbols, maxOrders, maxPositionWeight)
@@ -1634,7 +1697,7 @@ export function runAutoTrading(
   }
 
   let executed = 0;
-  if (input.execute && next.systemConfig.tradingMode === "模拟" && orders.length > 0) {
+  if (input.execute && next.systemConfig.tradingMode === "模拟" && tradingSession.open && orders.length > 0) {
     const autoOrderIds = new Set(orders.map((order) => order.id));
     next = executePendingOrders(next);
     executed = next.orders.filter((order) => autoOrderIds.has(order.id) && order.status === "已成交").length;
@@ -1643,10 +1706,13 @@ export function runAutoTrading(
   const riskBlocked = buyBlocked
     ? buyCandidates.length
     : Math.max(0, buyCandidates.length - buyOrders.length);
+  const closedExecutionSummary = input.execute && !tradingSession.open ? `；当前 A 股${tradingSession.reason}，未撮合成交` : "";
   const summary = !enabled
     ? "自动交易未启用，仅完成信号扫描"
     : next.riskScore >= riskLimit
-      ? `减仓 ${sellOrders.length} 笔，新增买入因风险评分 ${next.riskScore} 被阻断`
+      ? `减仓 ${sellOrders.length} 笔，新增买入因风险评分 ${next.riskScore} 被阻断${closedExecutionSummary}`
+    : input.execute && !tradingSession.open
+      ? `自动生成减仓 ${sellOrders.length} 笔、买入 ${buyOrders.length} 笔；当前 A 股${tradingSession.reason}，未撮合成交`
     : next.systemConfig.tradingMode === "实盘" && input.execute
       ? `实盘模式已生成减仓 ${sellOrders.length} 笔、买入 ${buyOrders.length} 笔委托，需接入券商网关后执行`
       : `自动生成减仓 ${sellOrders.length} 笔、买入 ${buyOrders.length} 笔${executed > 0 ? "并完成模拟撮合" : ""}`;
@@ -1702,6 +1768,17 @@ export function generateOrder(state: QuantState, strategyId: string): QuantState
 export function executePendingOrders(state: QuantState): QuantState {
   const next = cloneState(state);
   const filledOrders = next.orders.filter((order) => order.status === "待执行" || order.status === "部分成交");
+  const tradingSession = getAShareTradingSession(next.baseTime);
+  if (!tradingSession.open) {
+    if (filledOrders.length > 0) {
+      const reason = `A股${tradingSession.reason}，未撮合成交`;
+      next.orders = next.orders.map((order) => filledOrders.some((item) => item.id === order.id)
+        ? { ...order, status: "待执行", reason: appendOrderReason(order, reason) }
+        : order);
+      addLog(next, "交易执行", `${reason}，${filledOrders.length} 笔委托保留待执行`, "trade-calendar");
+    }
+    return next;
+  }
   const quoteName = new Map(next.marketQuotes.map((quote) => [inferExchange(quote.symbol), quote.name]));
   const filledQuantities = new Map<string, number>();
   const rejectedOrders = new Set<string>();

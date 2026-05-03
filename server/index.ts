@@ -15,6 +15,7 @@ import {
   executePendingOrders,
   finalizeDataSync,
   generateOrder,
+  normalizeOrderTradingCalendar,
   optimizeStrategies,
   publishMiroFishFactor,
   runOperationalWorkflow,
@@ -77,7 +78,7 @@ function normalizeState(raw: QuantState): QuantState {
     cashBalance: raw.cashBalance ?? initial.cashBalance,
     baseTime: new Date(raw.baseTime)
   };
-  return {
+  return normalizeOrderTradingCalendar({
     ...state,
     backtests: state.backtests.map((task) => ({
       ...task,
@@ -87,7 +88,7 @@ function normalizeState(raw: QuantState): QuantState {
       period: task.period ?? "2021-01-01 至 2026-05-01",
       initialCapital: task.initialCapital ?? 10_000_000
     }))
-  };
+  });
 }
 
 async function ensureStateFile() {
