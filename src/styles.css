@@ -241,6 +241,60 @@ button {
   border: 1px solid var(--line);
 }
 
+.command-bar button {
+  transition: border-color 0.16s ease, background 0.16s ease, opacity 0.16s ease;
+}
+
+.command-bar button:hover:not(:disabled) {
+  border-color: rgba(45, 140, 255, 0.72);
+  background: rgba(33, 74, 116, 0.92);
+}
+
+.command-bar button:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.command-bar button[aria-busy="true"] {
+  color: #e8f7ff;
+  border-color: rgba(35, 211, 255, 0.72);
+  background: rgba(18, 66, 96, 0.96);
+}
+
+.action-feedback {
+  width: fit-content;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: -2px 0 12px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.action-feedback.success {
+  color: #c9ffe7;
+  border: 1px solid rgba(37, 217, 144, 0.42);
+  background: rgba(37, 217, 144, 0.11);
+}
+
+.action-feedback.error {
+  color: #ffd0d5;
+  border: 1px solid rgba(255, 90, 102, 0.45);
+  background: rgba(255, 90, 102, 0.1);
+}
+
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .profile {
   display: flex;
   align-items: center;

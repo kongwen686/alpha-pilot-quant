@@ -101,7 +101,9 @@ type ViewId =
   | "operation-logs";
 
 type ApiAction = () => Promise<QuantState>;
-type ApplyAction = (request: ApiAction) => void;
+type ActionOptions = { label?: string; success?: string; view?: ViewId };
+type ApplyAction = (request: ApiAction, options?: ActionOptions) => void;
+type ActionNotice = { kind: "success" | "error"; message: string } | null;
 
 interface MenuGroup {
   title: string;
@@ -187,6 +189,8 @@ function App() {
   const [view, setView] = useState<ViewId>("dashboard");
   const [collapsed, setCollapsed] = useState(false);
   const [error, setError] = useState("");
+  const [busyAction, setBusyAction] = useState("");
+  const [notice, setNotice] = useState<ActionNotice>(null);
 
   useEffect(() => {
     api.getState().then(setState).catch((err: Error) => setError(err.message));
@@ -212,9 +216,35 @@ function App() {
 
   const selectedStrategy = state.strategies[0]?.id ?? "";
 
-  const apply: ApplyAction = (request) => {
-    request().then(setState).catch((err: Error) => setError(err.message));
+  const apply: ApplyAction = (request, options = {}) => {
+    if (busyAction) return;
+    const label = options.label ?? "操作";
+    setBusyAction(label);
+    setError("");
+    setNotice(null);
+    request()
+      .then((nextState) => {
+        setState(nextState);
+        if (options.view) setView(options.view);
+        setNotice({ kind: "success", message: options.success ?? `${label}已完成` });
+      })
+      .catch((err: Error) => {
+        const message = err.message || `${label}失败`;
+        setError(message);
+        setNotice({ kind: "error", message: `${label}失败：${message}` });
+      })
+      .finally(() => setBusyAction(""));
   };
+
+  const commands: Array<{ id: string; label: string; icon: LucideIcon; action: ApiAction; success: string; view: ViewId }> = [
+    { id: "sync", label: "数据同步", icon: RefreshCw, action: api.runDataPipeline, success: "数据同步已完成，聚合分析已刷新", view: "data-overview" },
+    { id: "factors", label: "因子计算", icon: Zap, action: api.computeFactors, success: "因子计算已完成，因子库已更新", view: "factor-research" },
+    { id: "signals", label: "信号选股", icon: ListChecks, action: api.runSignalSelection, success: "信号选股已完成，候选股票已刷新", view: "signal-selection" },
+    { id: "auto-trade", label: "自动交易", icon: Send, action: () => api.runAutoTrading({ strategyId: selectedStrategy, execute: true }), success: "自动交易已执行，订单和持仓已更新", view: "auto-trading" },
+    { id: "backtest", label: "新建回测", icon: Play, action: () => api.createBacktest(selectedStrategy), success: "回测任务已创建", view: "backtest-tasks" },
+    { id: "risk", label: "风险刷新", icon: Shield, action: api.refreshRisk, success: "风险指标已刷新", view: "risk-monitor" },
+    { id: "workflow", label: "一键闭环", icon: GitBranch, action: () => api.runWorkflow({ strategyId: selectedStrategy, execute: true }), success: "一键闭环已完成，数据、因子、回测、选股、交易和风控均已执行", view: "dashboard" }
+  ];
 
   return (
     <div className="app-shell">
@@ -290,15 +320,29 @@ function App() {
               <h1>{title}</h1>
             </div>
             <div className="command-bar">
-              <button onClick={() => apply(api.runDataPipeline)}><RefreshCw size={15} />数据同步</button>
-              <button onClick={() => apply(api.computeFactors)}><Zap size={15} />因子计算</button>
-              <button onClick={() => apply(api.runSignalSelection)}><ListChecks size={15} />信号选股</button>
-              <button onClick={() => apply(() => api.runAutoTrading({ strategyId: selectedStrategy, execute: true }))}><Send size={15} />自动交易</button>
-              <button onClick={() => apply(() => api.createBacktest(selectedStrategy))}><Play size={15} />新建回测</button>
-              <button onClick={() => apply(api.refreshRisk)}><Shield size={15} />风险刷新</button>
-              <button onClick={() => apply(() => api.runWorkflow({ strategyId: selectedStrategy, execute: true }))}><GitBranch size={15} />一键闭环</button>
+              {commands.map(({ id, label, icon: Icon, action, success, view: nextView }) => {
+                const loading = busyAction === label;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    disabled={Boolean(busyAction)}
+                    aria-busy={loading}
+                    onClick={() => apply(action, { label, success, view: nextView })}
+                  >
+                    {loading ? <RefreshCw className="spin" size={15} /> : <Icon size={15} />}
+                    {loading ? `${label}中` : label}
+                  </button>
+                );
+              })}
             </div>
           </div>
+          {notice && (
+            <div className={`action-feedback ${notice.kind}`} role={notice.kind === "error" ? "alert" : "status"}>
+              {notice.kind === "error" ? <AlertTriangle size={15} /> : <CheckCircle2 size={15} />}
+              {notice.message}
+            </div>
+          )}
           {error && <div className="api-error">{error}</div>}
           <ViewRenderer view={view} state={state} apply={apply} setView={setView} />
         </section>
