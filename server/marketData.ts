@@ -1,4 +1,5 @@
 import { cloneState, type MarketQuote, type QuantState } from "../src/quantEngine";
+import { writeMarketWarehouseSnapshot } from "./warehouse";
 
 let ingestionLogSequence = 0;
 
@@ -158,6 +159,7 @@ export async function ingestRealMarketData(state: QuantState): Promise<QuantStat
   const averageLatency = Math.round((quotesResponse.latency + klineResponse.latency) / 2);
   const quoteCount = quotes.length;
   const klineCount = klineRows.length;
+  await writeMarketWarehouseSnapshot({ quotes, klineRows, timestamp });
 
   next.dataSources = next.dataSources.map((source) => {
     if (source.id === "ds-1") {

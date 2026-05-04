@@ -6,7 +6,7 @@ The project is built for research, demos, education, and prototype validation. I
 
 ## Features
 
-- Data center: Tencent Securities quote crawling, scheduled data sync, data source registry, provider configs, subscriptions, quality checks, and aggregation insights.
+- Data center: Tencent Securities quote crawling, scheduled data sync, local JSONL warehouse snapshots, data source registry, provider configs, subscriptions, quality checks, and aggregation insights.
 - Research workspace: configurable factor formulas, factor calculation, strategy library, strategy toggles, strategy optimization, and MiroFish-style market scenario simulation adapter.
 - Signal selection: ranks tradable A-share and ETF quotes with factor bias, momentum, liquidity, and position constraints.
 - Auto trading loop: generates simulated buy/sell orders from signals, handles stop-loss, take-profit, overweight trimming, cash balance, and mock fills.
@@ -74,6 +74,7 @@ Read endpoints:
 - `GET /api/data-subscriptions`
 - `GET /api/data-sync-runs`
 - `GET /api/data-aggregate-insights`
+- `GET /api/data-warehouse`
 - `GET /api/factors`
 - `GET /api/factor-configs`
 - `GET /api/mirofish/config`
@@ -143,6 +144,7 @@ Auto trading request example:
 server/            Local REST API and market data ingestion
 src/               React app and quant engine
 data/state.json    Local runtime state, ignored by git
+data/warehouse/    Local JSONL warehouse snapshots, ignored by git
 dist/              Production build output, ignored by git
 ```
 

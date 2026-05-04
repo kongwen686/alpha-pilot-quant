@@ -344,6 +344,17 @@ export interface TradingSessionStatus {
   source: string;
 }
 
+export interface DataWarehouseStats {
+  rootPath: string;
+  storageMode: "local-jsonl";
+  actualBytes: number;
+  actualRows: number;
+  fileCount: number;
+  logicalRows: number;
+  logicalBytes: number;
+  updatedAt: string;
+}
+
 export interface QuantState {
   dataSources: DataSource[];
   dataProviderConfigs: DataProviderConfig[];
@@ -375,6 +386,7 @@ export interface QuantState {
   marketLabels: string[];
   marketQuotes: MarketQuote[];
   marketSession: TradingSessionStatus;
+  dataWarehouse: DataWarehouseStats;
   cashBalance: number;
   baseTime: Date;
   riskScore: number;
@@ -394,6 +406,16 @@ export function createInitialState(): QuantState {
     alerts: 3,
     cashBalance: 1_250_000,
     marketSession: getTradingSessionStatus(baseTime),
+    dataWarehouse: {
+      rootPath: "data/warehouse",
+      storageMode: "local-jsonl",
+      actualBytes: 0,
+      actualRows: 0,
+      fileCount: 0,
+      logicalRows: 0,
+      logicalBytes: 0,
+      updatedAt: "-"
+    },
     marketSeries: [0, 1.6, 0.4, -0.8, 2.1, 6.2, 10.8, 6.4, 9.8, 12.3, 14.1, 13.2, 15.1],
     marketLabels: names,
     marketQuotes: [
@@ -628,6 +650,7 @@ export function cloneState(state: QuantState): QuantState {
     marketLabels: [...(state.marketLabels ?? names)],
     marketQuotes: (state.marketQuotes ?? []).map((item) => ({ ...item })),
     marketSession: { ...(state.marketSession ?? createInitialState().marketSession), sessions: [...(state.marketSession?.sessions ?? createInitialState().marketSession.sessions)] },
+    dataWarehouse: { ...(state.dataWarehouse ?? createInitialState().dataWarehouse) },
     cashBalance: Number(state.cashBalance ?? createInitialState().cashBalance),
     baseTime: new Date(state.baseTime)
   };

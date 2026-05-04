@@ -845,10 +845,9 @@ function formatSignedPercent(value: number) {
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
 }
 
-function formatDataVolume(rows: number) {
-  const bytes = rows * 320;
+function formatBytes(bytes: number) {
   const units = ["B", "KB", "MB", "GB", "TB"];
-  let value = bytes;
+  let value = Math.max(0, bytes);
   let unitIndex = 0;
   while (value >= 1024 && unitIndex < units.length - 1) {
     value /= 1024;
@@ -1254,11 +1253,16 @@ function DataSnapshot({ state, expanded }: { state: QuantState; expanded?: boole
   const lastSync = state.dataSyncRuns[0]?.time ?? state.dataSources[0]?.latestUpdate ?? "-";
   const enabledProviders = state.dataProviderConfigs.filter((item) => item.enabled).length;
   const activeSubscriptions = state.dataSubscriptions.filter((item) => item.status !== "暂停").length;
+  const warehouse = state.dataWarehouse;
+  const actualBytes = warehouse?.actualBytes ?? 0;
+  const logicalRows = warehouse?.logicalRows ?? totalRows;
+  const logicalBytes = warehouse?.logicalBytes ?? totalRows * 320;
   return (
     <div className={`snapshot ${expanded ? "expanded" : ""}`}>
       <Metric title="数据源" value={state.dataSources.length} delta={`正常 ${normal} 异常 ${state.dataSources.length - normal}`} icon={Database} />
       <Metric title="采集接口" value={enabledProviders} delta={`${activeSubscriptions} 个订阅活跃`} icon={Table2} />
-      <Metric title="数据量" value={formatDataVolume(totalRows)} delta={`${formatCurrency(totalRows)} 行记录`} icon={HardDrive} />
+      <Metric title="实际存储" value={formatBytes(actualBytes)} delta={`${warehouse?.fileCount ?? 0} 文件 / ${formatCurrency(warehouse?.actualRows ?? 0)} 落盘行`} icon={HardDrive} />
+      <Metric title="估算容量" value={formatBytes(logicalBytes)} delta={`${formatCurrency(logicalRows)} 逻辑行`} icon={Boxes} />
       <Metric title="数据更新" value={lastSync} delta="最新同步" icon={RefreshCw} />
     </div>
   );

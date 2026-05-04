@@ -1,6 +1,7 @@
 node_modules/
 dist/
 data/state.json
+data/warehouse/
 .env
 .env.local
 *.tsbuildinfo

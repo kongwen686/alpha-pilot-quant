@@ -45,6 +45,7 @@ import {
   type QuantState
 } from "../src/quantEngine";
 import { ingestRealMarketData } from "./marketData";
+import { getWarehouseStats } from "./warehouse";
 
 const PORT = Number(process.env.API_PORT ?? 8787);
 const AUTO_TRADER_INTERVAL_MS = Number(process.env.AUTO_TRADER_INTERVAL_MS ?? 0);
@@ -76,6 +77,7 @@ function normalizeState(raw: QuantState): QuantState {
     marketLabels: raw.marketLabels ?? initial.marketLabels,
     marketQuotes: raw.marketQuotes ?? initial.marketQuotes,
     marketSession: raw.marketSession ?? initial.marketSession,
+    dataWarehouse: raw.dataWarehouse ?? initial.dataWarehouse,
     cashBalance: raw.cashBalance ?? initial.cashBalance,
     baseTime: new Date(raw.baseTime)
   };
@@ -92,6 +94,14 @@ function normalizeState(raw: QuantState): QuantState {
   });
 }
 
+async function attachWarehouseStats(state: QuantState): Promise<QuantState> {
+  const logicalRows = state.dataSources.reduce((sum, source) => sum + source.rows, 0);
+  return {
+    ...state,
+    dataWarehouse: await getWarehouseStats(logicalRows)
+  };
+}
+
 async function ensureStateFile() {
   await mkdir(dirname(stateFile), { recursive: true });
   try {
@@ -104,7 +114,7 @@ async function ensureStateFile() {
 async function loadState() {
   await ensureStateFile();
   const raw = JSON.parse(await readFile(stateFile, "utf8")) as QuantState;
-  return normalizeState(raw);
+  return attachWarehouseStats(normalizeState(raw));
 }
 
 async function saveState(state: QuantState) {
@@ -283,7 +293,8 @@ const readRoutes: Record<string, (state: QuantState) => unknown> = {
   "/api/logs": (state) => state.logs,
   "/api/architecture": (state) => state.architecture,
   "/api/market-quotes": (state) => state.marketQuotes,
-  "/api/trading/session": (state) => state.marketSession
+  "/api/trading/session": (state) => state.marketSession,
+  "/api/data-warehouse": (state) => state.dataWarehouse
 };
 
 const server = createServer(async (req, res) => {
@@ -308,7 +319,7 @@ const server = createServer(async (req, res) => {
     }
 
     const body = await readBody(req);
-    const nextState = normalizeState(await route.handler(state, body, req));
+    const nextState = await attachWarehouseStats(normalizeState(await route.handler(state, body, req)));
     await saveState(nextState);
     sendJson(res, 200, nextState);
   } catch (error) {
@@ -325,7 +336,7 @@ async function runScheduledAutoTrader() {
   try {
     const state = await loadState();
     const withMarketData = process.env.AUTO_TRADER_SYNC_MARKET === "false" ? state : finalizeDataSync(await ingestRealMarketData(state), "自动交易", "自动交易前置数据同步完成");
-    const nextState = runAutoTrading(withMarketData, { execute: true });
+    const nextState = await attachWarehouseStats(runAutoTrading(withMarketData, { execute: true }));
     await saveState(nextState);
   } catch (error) {
     const message = error instanceof Error ? error.message : "unknown error";
@@ -337,7 +348,7 @@ async function runScheduledAutoTrader() {
 async function runScheduledDataSync() {
   try {
     const state = await loadState();
-    const nextState = finalizeDataSync(await ingestRealMarketData(state), "调度", "调度任务完成自动爬取、同步和聚合分析");
+    const nextState = await attachWarehouseStats(finalizeDataSync(await ingestRealMarketData(state), "调度", "调度任务完成自动爬取、同步和聚合分析"));
     await saveState(nextState);
   } catch (error) {
     const message = error instanceof Error ? error.message : "unknown error";
