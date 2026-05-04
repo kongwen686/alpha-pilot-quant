@@ -22,6 +22,7 @@ import {
   runAutoTrading,
   refreshRisk,
   runSignalSelection,
+  runTradingAgentDeliberation,
   runDataQualityCheck,
   rebalancePosition,
   subscribeSource,
@@ -70,6 +71,7 @@ function normalizeState(raw: QuantState): QuantState {
     backtestResults: raw.backtestResults ?? initial.backtestResults,
     stockSignals: raw.stockSignals ?? initial.stockSignals,
     autoTradeRuns: raw.autoTradeRuns ?? initial.autoTradeRuns,
+    tradingAgentDecisions: raw.tradingAgentDecisions ?? initial.tradingAgentDecisions,
     strategyOptimizations: raw.strategyOptimizations ?? initial.strategyOptimizations,
     riskIndicators: raw.riskIndicators ?? initial.riskIndicators,
     roles: raw.roles ?? initial.roles,
@@ -212,6 +214,7 @@ const mutationRoutes: Array<{ method: string; pattern: RegExp; handler: Handler 
     handler: (state, body) => generateOrder(state, String((body as { strategyId?: string }).strategyId ?? state.strategies[0]?.id ?? ""))
   },
   { method: "POST", pattern: /^\/api\/signals\/select$/, handler: (state) => runSignalSelection(state) },
+  { method: "POST", pattern: /^\/api\/trading-agents\/deliberate$/, handler: (state, body) => runTradingAgentDeliberation(state, body as Parameters<typeof runTradingAgentDeliberation>[1]) },
   {
     method: "POST",
     pattern: /^\/api\/trading\/auto$/,
@@ -295,6 +298,7 @@ const readRoutes: Record<string, (state: QuantState) => unknown> = {
   "/api/backtests": (state) => state.backtests,
   "/api/backtest-results": (state) => state.backtestResults,
   "/api/stock-signals": (state) => state.stockSignals,
+  "/api/trading-agent-decisions": (state) => state.tradingAgentDecisions,
   "/api/auto-trade-runs": (state) => state.autoTradeRuns,
   "/api/orders": (state) => state.orders,
   "/api/positions": (state) => state.positions,

@@ -135,6 +135,10 @@ export function runSignalSelection() {
   return post("/api/signals/select");
 }
 
+export function runTradingAgents(input?: { strategyId?: string }) {
+  return post("/api/trading-agents/deliberate", input ?? {});
+}
+
 export function runAutoTrading(input?: { strategyId?: string; execute?: boolean; minScore?: number; maxOrders?: number }) {
   return post("/api/trading/auto", input ?? {});
 }

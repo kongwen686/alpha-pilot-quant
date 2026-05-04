@@ -67,6 +67,7 @@ import {
   type StockSignal,
   type Strategy,
   type StrategyOptimization,
+  type TradingAgentDecision,
   type TradingSessionStatus,
   type SystemConfig,
   type AutoTradeRun,
@@ -655,6 +656,8 @@ function Backtest({ view, state, apply }: { view: ViewId; state: QuantState; app
 }
 
 function Execution({ view, state, apply }: { view: ViewId; state: QuantState; apply: ApplyAction }) {
+  const activeStrategyId = state.strategies.find((strategy) => strategy.status === "运行中")?.id ?? state.strategies[0]?.id ?? "";
+  const tradingAgentDecisions = state.tradingAgentDecisions ?? [];
   if (view === "signal-selection") {
     return (
       <>
@@ -665,6 +668,9 @@ function Execution({ view, state, apply }: { view: ViewId; state: QuantState; ap
           </Panel>
           <Panel title="信号交易控制">
             <AutoTradeControl state={state} apply={apply} />
+          </Panel>
+          <Panel title="TradingAgents 决策审议" action={<button onClick={() => apply(() => api.runTradingAgents({ strategyId: activeStrategyId }))}><Brain size={14} />审议信号</button>}>
+            <TradingAgentDecisionTable decisions={tradingAgentDecisions} />
           </Panel>
         </div>
       </>
@@ -704,6 +710,9 @@ function Execution({ view, state, apply }: { view: ViewId; state: QuantState; ap
           </Panel>
           <Panel title="候选信号">
             <SignalTable signals={state.stockSignals} apply={apply} compact />
+          </Panel>
+          <Panel title="TradingAgents 审议记录" action={<button onClick={() => apply(() => api.runTradingAgents({ strategyId: activeStrategyId }))}><Brain size={14} />重新审议</button>}>
+            <TradingAgentDecisionTable decisions={tradingAgentDecisions} compact />
           </Panel>
           <Panel title="待处理订单" action={<button onClick={() => apply(api.executePendingOrders)}><CheckCircle2 size={14} />撮合成交</button>}>
             <OrderTable orders={state.orders.filter((order) => order.status === "待执行" || order.status === "部分成交").slice(0, 8)} apply={apply} />
@@ -1824,6 +1833,29 @@ function SignalTable({ signals, apply, compact }: { signals: StockSignal[]; appl
           </span>
           <span>{signal.targetWeight}%<small>止损 {signal.stopLoss} / 止盈 {signal.takeProfit}</small></span>
           <span className="signal-reasons">{signal.reasons.join("、")}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TradingAgentDecisionTable({ decisions, compact }: { decisions: TradingAgentDecision[]; compact?: boolean }) {
+  const rows = decisions.slice(0, compact ? 5 : 10);
+  if (rows.length === 0) return <p className="empty">暂无 TradingAgents 审议记录</p>;
+  return (
+    <div className="table trading-agent-table">
+      <div className="thead six"><span>时间</span><span>标的</span><span>结论</span><span>风险预算</span><span>研究辩论</span><span>组合经理</span></div>
+      {rows.map((decision) => (
+        <div className="trow six" key={decision.id}>
+          <span>{decision.time}</span>
+          <span>{decision.name}<small>{decision.symbol} / {decision.strategy}</small></span>
+          <span className="row-actions">
+            <Badge status={decision.finalDecision === "买入" ? "正常" : decision.finalDecision === "卖出" ? "告警" : "运行中"} label={`${decision.finalDecision} / ${decision.confidence}`} />
+            <small>原始信号 {decision.signalScore}</small>
+          </span>
+          <span>{decision.riskBudget}%<small>{decision.status === "告警" ? "保守风控降级" : "三层风控通过"}</small></span>
+          <span>{decision.bullThesis}<small>{decision.bearThesis}；{decision.riskDebate.join("；")}</small></span>
+          <span className="row-actions"><Badge status={decision.status} /><small>{decision.portfolioDecision}</small></span>
         </div>
       ))}
     </div>

@@ -188,6 +188,33 @@ export interface AutoTradeRun {
   time: string;
 }
 
+export interface TradingAgentReport {
+  role: "市场分析师" | "基本面分析师" | "新闻分析师" | "社媒分析师";
+  stance: "看多" | "中性" | "看空";
+  score: number;
+  summary: string;
+  evidence: string[];
+}
+
+export interface TradingAgentDecision {
+  id: string;
+  symbol: string;
+  name: string;
+  strategy: string;
+  signalScore: number;
+  action: SignalAction;
+  finalDecision: SignalAction;
+  confidence: number;
+  riskBudget: number;
+  analystReports: TradingAgentReport[];
+  bullThesis: string;
+  bearThesis: string;
+  riskDebate: string[];
+  portfolioDecision: string;
+  status: Status;
+  time: string;
+}
+
 export interface BacktestTask {
   id: string;
   strategyId: string;
@@ -393,6 +420,7 @@ export interface QuantState {
   strategyOptimizations: StrategyOptimization[];
   stockSignals: StockSignal[];
   autoTradeRuns: AutoTradeRun[];
+  tradingAgentDecisions: TradingAgentDecision[];
   backtests: BacktestTask[];
   backtestResults: BacktestResult[];
   orders: Order[];
@@ -625,6 +653,7 @@ export function createInitialState(): QuantState {
     },
     stockSignals: [],
     autoTradeRuns: [],
+    tradingAgentDecisions: [],
     logs: [
       { id: "log-1", module: "交易执行", action: "订单部分成交 IF2406 x2", operator: "system", time: "14:30:25" },
       { id: "log-2", module: "数据处理", action: "行情数据接入完成", operator: "system", time: "14:29:58" },
@@ -658,6 +687,11 @@ export function cloneState(state: QuantState): QuantState {
     strategyOptimizations: (state.strategyOptimizations ?? createInitialState().strategyOptimizations).map((item) => ({ ...item, suggestedFactors: [...item.suggestedFactors] })),
     stockSignals: (state.stockSignals ?? createInitialState().stockSignals).map((item) => ({ ...item, reasons: [...item.reasons] })),
     autoTradeRuns: (state.autoTradeRuns ?? createInitialState().autoTradeRuns).map((item) => ({ ...item, riskNotes: [...(item.riskNotes ?? [])] })),
+    tradingAgentDecisions: (state.tradingAgentDecisions ?? createInitialState().tradingAgentDecisions).map((item) => ({
+      ...item,
+      analystReports: item.analystReports.map((report) => ({ ...report, evidence: [...report.evidence] })),
+      riskDebate: [...item.riskDebate]
+    })),
     backtests: state.backtests.map((item) => ({ ...item })),
     backtestResults: (state.backtestResults ?? createInitialState().backtestResults).map((item) => ({ ...item })),
     orders: state.orders.map((item) => ({ ...item })),
@@ -1011,6 +1045,106 @@ function buildStockSignals(state: QuantState): StockSignal[] {
     })
     .sort((a, b) => b.score - a.score)
     .slice(0, 12);
+}
+
+function stanceFromScore(score: number): TradingAgentReport["stance"] {
+  if (score >= 66) return "看多";
+  if (score <= 44) return "看空";
+  return "中性";
+}
+
+function buildTradingAgentReport(role: TradingAgentReport["role"], score: number, summary: string, evidence: string[]): TradingAgentReport {
+  return {
+    role,
+    stance: stanceFromScore(score),
+    score: Math.round(clamp(score, 0, 100)),
+    summary,
+    evidence
+  };
+}
+
+function buildTradingAgentDecisions(state: QuantState, strategy: Strategy | undefined, signals: StockSignal[]) {
+  const timestamp = stamp(new Date());
+  const riskLimit = getRiskLimit(state.systemConfig);
+  const topResult = strategy ? state.backtestResults.find((result) => result.strategy === strategy.name) : state.backtestResults[0];
+  const averageFactorWinRate = state.factors.filter((factor) => factor.enabled).reduce((sum, factor) => sum + factor.winRate, 0) / Math.max(1, state.factors.filter((factor) => factor.enabled).length);
+  const miroFish = state.miroFishScenarios.find((scenario) => scenario.status === "已完成") ?? state.miroFishScenarios[0];
+  const sentimentScore = miroFish ? 50 + miroFish.sentiment * 65 + miroFish.predictedImpact * 6 : 52;
+  const strategyMemory = topResult ? clamp(50 + topResult.excessReturn * 2.2 + topResult.sharpe * 8 - topResult.maxDrawdown * 0.6, 0, 100) : 55;
+  const riskPressure = clamp((state.riskScore - 45) * 0.9, 0, 34);
+
+  return signals.slice(0, 10).map((signal, index): TradingAgentDecision => {
+    const holding = state.positions.find((position) => position.symbol === signal.symbol);
+    const concentrationPenalty = holding && holding.weight > state.systemConfig.maxPositionWeight * 0.8 ? 12 : 0;
+    const marketScore = clamp(signal.score + signal.pctChange * 2.5 - concentrationPenalty, 0, 100);
+    const fundamentalScore = clamp((signal.score + averageFactorWinRate + strategyMemory) / 3 + (signal.reasons.some((reason) => reason.includes("因子")) ? 8 : 0), 0, 100);
+    const newsScore = clamp(sentimentScore + (signal.pctChange >= 0 ? 4 : -4), 0, 100);
+    const socialScore = clamp(50 + signal.pctChange * 7 + (miroFish?.confidence ?? 55) * 0.18, 0, 100);
+    const analystReports = [
+      buildTradingAgentReport("市场分析师", marketScore, `价格动量 ${signal.pctChange >= 0 ? "占优" : "承压"}，信号评分 ${signal.score}`, signal.reasons),
+      buildTradingAgentReport("基本面分析师", fundamentalScore, `启用因子胜率 ${averageFactorWinRate.toFixed(1)}%，策略历史记忆 ${strategyMemory.toFixed(0)}`, strategy?.factors ?? []),
+      buildTradingAgentReport("新闻分析师", newsScore, miroFish ? miroFish.report : "未接入新增事件，采用行情与因子上下文", miroFish ? [miroFish.title, `置信度 ${miroFish.confidence}`] : ["行情上下文"]),
+      buildTradingAgentReport("社媒分析师", socialScore, miroFish ? `群体推演情绪 ${miroFish.sentiment.toFixed(2)}，扩散影响 ${miroFish.predictedImpact.toFixed(2)}%` : "社媒代理暂无新增异动", [signal.source])
+    ];
+    const consensus = analystReports.reduce((sum, report) => sum + report.score, 0) / analystReports.length;
+    const bullScore = analystReports.filter((report) => report.stance === "看多").length;
+    const bearScore = analystReports.filter((report) => report.stance === "看空").length;
+    const confidence = Math.round(clamp(consensus + bullScore * 4 - bearScore * 5 - riskPressure, 0, 100));
+    const conservativeVeto = state.riskScore >= riskLimit || (holding?.weight ?? 0) >= state.systemConfig.maxPositionWeight || signal.score < state.systemConfig.minSignalScore - 6;
+    const adjustedBudget = clamp(signal.targetWeight * (confidence / 82) * (state.riskScore >= riskLimit ? 0 : 1), 0, state.systemConfig.maxPositionWeight);
+    const finalDecision: SignalAction = conservativeVeto && signal.action !== "卖出"
+      ? "观望"
+      : signal.action === "卖出"
+        ? "卖出"
+        : confidence >= 74 && signal.action === "买入"
+          ? "买入"
+          : confidence >= 62 && (signal.action === "买入" || signal.action === "候选")
+            ? "候选"
+            : "观望";
+    const riskDebate = [
+      `激进风控：${signal.score >= 78 ? "允许试探建仓" : "仅可保留候选"}，目标权重 ${signal.targetWeight}%`,
+      `中性风控：依据风险评分 ${state.riskScore}/${riskLimit} 将预算修正为 ${adjustedBudget.toFixed(1)}%`,
+      `保守风控：${conservativeVeto ? "触发否决或降级，要求观察" : "未触发硬性风控，保留执行窗口"}`
+    ];
+
+    return {
+      id: `tad-${Date.now()}-${index}`,
+      symbol: signal.symbol,
+      name: signal.name,
+      strategy: strategy?.name ?? "未配置策略",
+      signalScore: signal.score,
+      action: signal.action,
+      finalDecision,
+      confidence,
+      riskBudget: Number(adjustedBudget.toFixed(1)),
+      analystReports,
+      bullThesis: `看多研究员：${bullScore} 个分析师支持，核心依据为 ${analystReports.filter((report) => report.stance === "看多").map((report) => report.role).join("、") || "因子与行情改善"}。`,
+      bearThesis: `看空研究员：${bearScore} 个分析师反对，主要风险为 ${state.riskScore >= riskLimit ? "组合风险评分过高" : holding ? "已有持仓集中度需要控制" : "信号未形成完全共识"}。`,
+      riskDebate,
+      portfolioDecision: `组合经理：${finalDecision}，置信度 ${confidence}，单标的风险预算 ${adjustedBudget.toFixed(1)}%。`,
+      status: conservativeVeto ? "告警" : "已完成",
+      time: timestamp
+    };
+  });
+}
+
+function applyTradingAgentDecisionsToSignals(signals: StockSignal[], decisions: TradingAgentDecision[]) {
+  const decisionsBySymbol = new Map(decisions.map((decision) => [decision.symbol, decision]));
+  return signals.map((signal) => {
+    const decision = decisionsBySymbol.get(signal.symbol);
+    if (!decision) return signal;
+    const reasons = [
+      `TradingAgents ${decision.finalDecision}：置信度 ${decision.confidence}，风险预算 ${decision.riskBudget}%`,
+      ...signal.reasons
+    ].slice(0, 4);
+    return {
+      ...signal,
+      action: decision.finalDecision,
+      targetWeight: Number(Math.min(signal.targetWeight, decision.riskBudget).toFixed(1)),
+      reasons,
+      source: `${signal.source} / TradingAgents 多代理审议`
+    };
+  });
 }
 
 function getRiskLimit(config: SystemConfig) {
@@ -1743,9 +1877,27 @@ export function optimizeStrategies(state: QuantState): QuantState {
 export function runSignalSelection(state: QuantState): QuantState {
   const next = cloneState(state);
   next.stockSignals = buildStockSignals(next);
+  const strategy = next.strategies.find((item) => item.status === "运行中") ?? next.strategies[0];
+  const decisions = buildTradingAgentDecisions(next, strategy, next.stockSignals);
+  next.tradingAgentDecisions = [...decisions, ...next.tradingAgentDecisions].slice(0, 30);
+  next.stockSignals = applyTradingAgentDecisionsToSignals(next.stockSignals, decisions);
   const buyCount = next.stockSignals.filter((signal) => signal.action === "买入").length;
   const candidateCount = next.stockSignals.filter((signal) => signal.action === "候选").length;
-  addLog(next, "策略研究", `根据信号自动选股完成：买入 ${buyCount} 个，候选 ${candidateCount} 个`, "signal-engine");
+  const approvedCount = decisions.filter((decision) => decision.finalDecision === "买入" || decision.finalDecision === "候选").length;
+  addLog(next, "策略研究", `根据信号自动选股完成：买入 ${buyCount} 个，候选 ${candidateCount} 个，TradingAgents 审议通过 ${approvedCount} 个`, "signal-engine");
+  return next;
+}
+
+export function runTradingAgentDeliberation(state: QuantState, input: { strategyId?: string } = {}): QuantState {
+  const next = cloneState(state);
+  if (next.stockSignals.length === 0) {
+    next.stockSignals = buildStockSignals(next);
+  }
+  const strategy = next.strategies.find((item) => item.id === input.strategyId) ?? next.strategies.find((item) => item.status === "运行中") ?? next.strategies[0];
+  const decisions = buildTradingAgentDecisions(next, strategy, next.stockSignals);
+  next.tradingAgentDecisions = [...decisions, ...next.tradingAgentDecisions].slice(0, 30);
+  next.stockSignals = applyTradingAgentDecisionsToSignals(next.stockSignals, decisions);
+  addLog(next, "策略研究", `TradingAgents 多代理审议完成：覆盖 ${decisions.length} 个标的`, "tradingagents");
   return next;
 }
 
@@ -1772,6 +1924,9 @@ export function runAutoTrading(
   let next = cloneState(state);
   next.stockSignals = buildStockSignals(next);
   const strategy = next.strategies.find((item) => item.id === input.strategyId) ?? next.strategies.find((item) => item.status === "运行中") ?? next.strategies[0];
+  const decisions = buildTradingAgentDecisions(next, strategy, next.stockSignals);
+  next.tradingAgentDecisions = [...decisions, ...next.tradingAgentDecisions].slice(0, 30);
+  next.stockSignals = applyTradingAgentDecisionsToSignals(next.stockSignals, decisions);
   const enabled = next.systemConfig.autoTradeEnabled || input.execute === true;
   const minScore = Number(input.minScore ?? next.systemConfig.minSignalScore ?? 68);
   const maxOrders = Math.max(1, Number(input.maxOrders ?? next.systemConfig.maxAutoOrders ?? 3));
@@ -1787,6 +1942,8 @@ export function runAutoTrading(
   if (!strategy) riskNotes.push("未找到可用策略");
   if (next.riskScore >= riskLimit) riskNotes.push(`风险评分 ${next.riskScore} 超过 ${riskLimit}，阻断新增买入`);
   if (input.execute && !tradingSession.open) riskNotes.push(`当前 A 股${tradingSession.reason}，委托保留待执行，不进行撮合成交`);
+  const agentRejectedCount = decisions.filter((decision) => decision.signalScore >= minScore && decision.action !== "卖出" && decision.finalDecision === "观望").length;
+  if (agentRejectedCount > 0) riskNotes.push(`TradingAgents 多代理审议过滤 ${agentRejectedCount} 个高分但共识不足的候选`);
 
   const sellOrders = enabled && strategy
     ? buildReduceOrders(next, strategy, signalsBySymbol, pendingSymbols, maxOrders, maxPositionWeight)
