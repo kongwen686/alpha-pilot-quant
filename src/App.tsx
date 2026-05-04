@@ -67,6 +67,7 @@ import {
   type StockSignal,
   type Strategy,
   type StrategyOptimization,
+  type TradingSessionStatus,
   type SystemConfig,
   type AutoTradeRun,
   type User as QuantUser
@@ -270,7 +271,7 @@ function App() {
     { id: "sync", label: "数据同步", icon: RefreshCw, action: api.runDataPipeline, success: "数据同步已完成，聚合分析已刷新", view: "data-overview" },
     { id: "factors", label: "因子计算", icon: Zap, action: api.computeFactors, success: "因子计算已完成，因子库已更新", view: "factor-research" },
     { id: "signals", label: "信号选股", icon: ListChecks, action: api.runSignalSelection, success: "信号选股已完成，候选股票已刷新", view: "signal-selection" },
-    { id: "auto-trade", label: "自动交易", icon: Send, action: () => api.runAutoTrading({ strategyId: selectedStrategy, execute: true }), success: "自动交易已执行，订单和持仓已更新", view: "auto-trading" },
+    { id: "auto-trade", label: "自动交易", icon: Send, action: () => api.runAutoTrading({ strategyId: selectedStrategy, execute: true }), success: "自动交易流程已执行，休市时委托保留待执行", view: "auto-trading" },
     { id: "backtest", label: "新建回测", icon: Play, action: () => api.createBacktest(selectedStrategy), success: "回测任务已创建", view: "backtest-tasks" },
     { id: "risk", label: "风险刷新", icon: Shield, action: api.refreshRisk, success: "风险指标已刷新", view: "risk-monitor" },
     { id: "workflow", label: "一键闭环", icon: GitBranch, action: () => api.runWorkflow({ strategyId: selectedStrategy, execute: true }), success: "一键闭环已完成，数据、因子、回测、选股、交易和风控均已执行", view: "dashboard" }
@@ -424,6 +425,7 @@ function Dashboard({ state, apply, setView }: { state: QuantState; apply: ApplyA
   const latestSync = state.dataSyncRuns[0]?.time ?? state.marketQuotes[0]?.timestamp ?? "-";
   return (
     <>
+      <TradingSessionPanel session={state.marketSession} />
       <div className="metric-grid">
         <Metric title="策略总数" value={state.strategies.length} delta={`运行中 ${running}`} icon={Brain} />
         <Metric title="回测任务" value={state.backtests.length} delta={`${runningBacktests} 运行中`} icon={LineChart} />
@@ -652,63 +654,78 @@ function Backtest({ view, state, apply }: { view: ViewId; state: QuantState; app
 function Execution({ view, state, apply }: { view: ViewId; state: QuantState; apply: ApplyAction }) {
   if (view === "signal-selection") {
     return (
-      <div className="content-grid two">
-        <Panel title="自动选股信号" action={<button onClick={() => apply(api.runSignalSelection)}><ListChecks size={14} />刷新信号</button>}>
-          <SignalTable signals={state.stockSignals} apply={apply} />
-        </Panel>
-        <Panel title="信号交易控制">
-          <AutoTradeControl state={state} apply={apply} />
-        </Panel>
-      </div>
+      <>
+        <TradingSessionPanel session={state.marketSession} />
+        <div className="content-grid two">
+          <Panel title="自动选股信号" action={<button onClick={() => apply(api.runSignalSelection)}><ListChecks size={14} />刷新信号</button>}>
+            <SignalTable signals={state.stockSignals} apply={apply} />
+          </Panel>
+          <Panel title="信号交易控制">
+            <AutoTradeControl state={state} apply={apply} />
+          </Panel>
+        </div>
+      </>
     );
   }
   if (view === "trade-monitor") {
     return (
-      <div className="content-grid two">
-        <Panel title="实时交易监控" action={<button onClick={() => apply(api.executePendingOrders)}><CheckCircle2 size={14} />撮合成交</button>}>
-          <TradeSummary state={state} apply={apply} expanded />
-        </Panel>
-        <Panel title="自动选股信号" action={<button onClick={() => apply(api.runSignalSelection)}><ListChecks size={14} />刷新</button>}>
-          <SignalTable signals={state.stockSignals} apply={apply} compact />
-        </Panel>
-        <Panel title="策略引擎">
-          <StrategyTable strategies={state.strategies} apply={apply} compact />
-        </Panel>
-        <Panel title="自动交易记录">
-          <AutoTradeRunTable runs={state.autoTradeRuns} />
-        </Panel>
-      </div>
+      <>
+        <TradingSessionPanel session={state.marketSession} />
+        <div className="content-grid two">
+          <Panel title="实时交易监控" action={<button onClick={() => apply(api.executePendingOrders)}><CheckCircle2 size={14} />撮合成交</button>}>
+            <TradeSummary state={state} apply={apply} expanded />
+          </Panel>
+          <Panel title="自动选股信号" action={<button onClick={() => apply(api.runSignalSelection)}><ListChecks size={14} />刷新</button>}>
+            <SignalTable signals={state.stockSignals} apply={apply} compact />
+          </Panel>
+          <Panel title="策略引擎">
+            <StrategyTable strategies={state.strategies} apply={apply} compact />
+          </Panel>
+          <Panel title="自动交易记录">
+            <AutoTradeRunTable runs={state.autoTradeRuns} />
+          </Panel>
+        </div>
+      </>
     );
   }
   if (view === "auto-trading") {
     return (
-      <div className="content-grid two">
-        <Panel title="自动交易控制">
-          <AutoTradeControl state={state} apply={apply} />
-        </Panel>
-        <Panel title="运行记录">
-          <AutoTradeRunTable runs={state.autoTradeRuns} />
-        </Panel>
-        <Panel title="候选信号">
-          <SignalTable signals={state.stockSignals} apply={apply} compact />
-        </Panel>
-        <Panel title="待处理订单" action={<button onClick={() => apply(api.executePendingOrders)}><CheckCircle2 size={14} />撮合成交</button>}>
-          <OrderTable orders={state.orders.filter((order) => order.status === "待执行" || order.status === "部分成交").slice(0, 8)} apply={apply} />
-        </Panel>
-      </div>
+      <>
+        <TradingSessionPanel session={state.marketSession} />
+        <div className="content-grid two">
+          <Panel title="自动交易控制">
+            <AutoTradeControl state={state} apply={apply} />
+          </Panel>
+          <Panel title="运行记录">
+            <AutoTradeRunTable runs={state.autoTradeRuns} />
+          </Panel>
+          <Panel title="候选信号">
+            <SignalTable signals={state.stockSignals} apply={apply} compact />
+          </Panel>
+          <Panel title="待处理订单" action={<button onClick={() => apply(api.executePendingOrders)}><CheckCircle2 size={14} />撮合成交</button>}>
+            <OrderTable orders={state.orders.filter((order) => order.status === "待执行" || order.status === "部分成交").slice(0, 8)} apply={apply} />
+          </Panel>
+        </div>
+      </>
     );
   }
   if (view === "orders") {
     return (
-      <Panel title="订单管理" action={<button onClick={() => apply(() => api.runAutoTrading({ strategyId: state.strategies[0].id, execute: false }))}><Send size={14} />按信号生成</button>}>
-        <OrderTable orders={state.orders} apply={apply} />
-      </Panel>
+      <>
+        <TradingSessionPanel session={state.marketSession} />
+        <Panel title="订单管理" action={<button onClick={() => apply(() => api.runAutoTrading({ strategyId: state.strategies[0].id, execute: false }))}><Send size={14} />按信号生成</button>}>
+          <OrderTable orders={state.orders} apply={apply} />
+        </Panel>
+      </>
     );
   }
   return (
-    <Panel title="持仓管理" action={<button onClick={() => apply(api.refreshRisk)}>头寸调整</button>}>
-      <PositionTable positions={state.positions} apply={apply} />
-    </Panel>
+    <>
+      <TradingSessionPanel session={state.marketSession} />
+      <Panel title="持仓管理" action={<button onClick={() => apply(api.refreshRisk)}>头寸调整</button>}>
+        <PositionTable positions={state.positions} apply={apply} />
+      </Panel>
+    </>
   );
 }
 
@@ -847,6 +864,40 @@ function Metric({ title, value, delta, icon: Icon, tone }: { title: string; valu
       <strong className={tone}>{value}</strong>
       <span>{delta}</span>
     </div>
+  );
+}
+
+const fallbackTradingSession: TradingSessionStatus = {
+  market: "A股",
+  open: false,
+  reason: "交易状态待同步",
+  date: "-",
+  checkedAt: "-",
+  nextOpenAt: "-",
+  sessions: ["09:30-11:30", "13:00-15:00"],
+  source: "交易日历接口未返回"
+};
+
+function TradingSessionPanel({ session }: { session?: TradingSessionStatus }) {
+  const current = session ?? fallbackTradingSession;
+  const label = current.open ? "连续竞价" : "休市/不可撮合";
+  return (
+    <section className={`session-panel ${current.open ? "open" : "closed"}`}>
+      <div className="session-title">
+        <div>
+          <Radio size={16} />
+          <strong>{current.market}交易状态</strong>
+          <span>{current.checkedAt} 复核</span>
+        </div>
+        <Badge status={current.open ? "正常" : "告警"} label={label} />
+      </div>
+      <div className="session-grid">
+        <div><span>当前状态</span><b>{current.reason}</b></div>
+        <div><span>下一开市</span><b>{current.open ? "当前可撮合" : current.nextOpenAt}</b></div>
+        <div><span>交易时段</span><b>{current.sessions.join(" / ")}</b></div>
+        <div><span>日历来源</span><b>{current.source}</b></div>
+      </div>
+    </section>
   );
 }
 
@@ -1576,6 +1627,7 @@ function AutoTradeControl({ state, apply }: { state: QuantState; apply: ApplyAct
     maxOrders: String(state.systemConfig.maxAutoOrders)
   });
   const lastRun = state.autoTradeRuns[0];
+  const marketSession = state.marketSession ?? fallbackTradingSession;
   const submit = (event: FormEvent) => {
     event.preventDefault();
     apply(() => api.runAutoTrading({
@@ -1589,6 +1641,7 @@ function AutoTradeControl({ state, apply }: { state: QuantState; apply: ApplyAct
     <div className="auto-trade">
       <div className="automation-status">
         <Metric title="自动交易" value={state.systemConfig.autoTradeEnabled ? "启用" : "停用"} delta={`${state.systemConfig.tradingMode} / ${state.systemConfig.riskMode}`} icon={Send} tone={state.systemConfig.autoTradeEnabled ? "green" : "red"} />
+        <Metric title="交易状态" value={marketSession.open ? "可撮合" : "休市"} delta={marketSession.open ? marketSession.reason : marketSession.nextOpenAt} icon={Radio} tone={marketSession.open ? "green" : "red"} />
         <Metric title="信号阈值" value={state.systemConfig.minSignalScore} delta={`单次最多 ${state.systemConfig.maxAutoOrders} 笔`} icon={Zap} />
         <Metric title="风险评分" value={state.riskScore} delta={state.riskScore >= 78 ? "接近阻断" : "可交易"} icon={Shield} tone={state.riskScore >= 78 ? "red" : "green"} />
         <Metric title="止损/止盈" value={`${state.systemConfig.stopLossPct}% / ${state.systemConfig.takeProfitPct}%`} delta={lastRun?.summary ?? "暂无记录"} icon={Activity} />

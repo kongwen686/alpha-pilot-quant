@@ -75,6 +75,7 @@ function normalizeState(raw: QuantState): QuantState {
     systemConfig: { ...initial.systemConfig, ...(raw.systemConfig ?? {}) },
     marketLabels: raw.marketLabels ?? initial.marketLabels,
     marketQuotes: raw.marketQuotes ?? initial.marketQuotes,
+    marketSession: raw.marketSession ?? initial.marketSession,
     cashBalance: raw.cashBalance ?? initial.cashBalance,
     baseTime: new Date(raw.baseTime)
   };
@@ -281,7 +282,8 @@ const readRoutes: Record<string, (state: QuantState) => unknown> = {
   "/api/system-config": (state) => state.systemConfig,
   "/api/logs": (state) => state.logs,
   "/api/architecture": (state) => state.architecture,
-  "/api/market-quotes": (state) => state.marketQuotes
+  "/api/market-quotes": (state) => state.marketQuotes,
+  "/api/trading/session": (state) => state.marketSession
 };
 
 const server = createServer(async (req, res) => {

@@ -333,6 +333,17 @@ export interface MarketQuote {
   timestamp: string;
 }
 
+export interface TradingSessionStatus {
+  market: "A股";
+  open: boolean;
+  reason: string;
+  date: string;
+  checkedAt: string;
+  nextOpenAt: string;
+  sessions: string[];
+  source: string;
+}
+
 export interface QuantState {
   dataSources: DataSource[];
   dataProviderConfigs: DataProviderConfig[];
@@ -363,6 +374,7 @@ export interface QuantState {
   marketSeries: number[];
   marketLabels: string[];
   marketQuotes: MarketQuote[];
+  marketSession: TradingSessionStatus;
   cashBalance: number;
   baseTime: Date;
   riskScore: number;
@@ -375,11 +387,13 @@ let localIdSequence = 0;
 export const marketLabels = names;
 
 export function createInitialState(): QuantState {
+  const baseTime = new Date("2024-05-24T14:30:00");
   return {
-    baseTime: new Date("2024-05-24T14:30:00"),
+    baseTime,
     riskScore: 65,
     alerts: 3,
     cashBalance: 1_250_000,
+    marketSession: getTradingSessionStatus(baseTime),
     marketSeries: [0, 1.6, 0.4, -0.8, 2.1, 6.2, 10.8, 6.4, 9.8, 12.3, 14.1, 13.2, 15.1],
     marketLabels: names,
     marketQuotes: [
@@ -613,6 +627,7 @@ export function cloneState(state: QuantState): QuantState {
     marketSeries: [...state.marketSeries],
     marketLabels: [...(state.marketLabels ?? names)],
     marketQuotes: (state.marketQuotes ?? []).map((item) => ({ ...item })),
+    marketSession: { ...(state.marketSession ?? createInitialState().marketSession), sessions: [...(state.marketSession?.sessions ?? createInitialState().marketSession.sessions)] },
     cashBalance: Number(state.cashBalance ?? createInitialState().cashBalance),
     baseTime: new Date(state.baseTime)
   };
@@ -635,14 +650,17 @@ function timeOnly(date: Date) {
 }
 
 const aShareHolidayRanges2026 = [
-  { name: "元旦休市", start: "2026-01-01", end: "2026-01-01" },
-  { name: "春节休市", start: "2026-02-16", end: "2026-02-23" },
+  { name: "元旦休市", start: "2026-01-01", end: "2026-01-03" },
+  { name: "春节休市", start: "2026-02-15", end: "2026-02-23" },
   { name: "清明节休市", start: "2026-04-04", end: "2026-04-06" },
   { name: "劳动节休市", start: "2026-05-01", end: "2026-05-05" },
   { name: "端午节休市", start: "2026-06-19", end: "2026-06-21" },
   { name: "中秋节休市", start: "2026-09-25", end: "2026-09-27" },
-  { name: "国庆节休市", start: "2026-10-01", end: "2026-10-08" }
+  { name: "国庆节休市", start: "2026-10-01", end: "2026-10-07" }
 ];
+
+const aShareSessions = ["09:30-11:30", "13:00-15:00"];
+const aShareCalendarSource = "上海证券交易所 2026 年部分节假日休市安排";
 
 function dateKey(date: Date) {
   const year = date.getFullYear();
@@ -668,6 +686,53 @@ function getAShareTradingSession(date: Date) {
   return { open: true, reason: "连续竞价时段" };
 }
 
+function isAShareTradingDay(date: Date) {
+  const key = dateKey(date);
+  const weekday = date.getDay();
+  return weekday !== 0 && weekday !== 6 && !aShareHolidayRanges2026.some((item) => key >= item.start && key <= item.end);
+}
+
+function setTime(date: Date, hour: number, minute: number) {
+  const next = new Date(date);
+  next.setHours(hour, minute, 0, 0);
+  return next;
+}
+
+function getNextAShareOpenAt(date: Date) {
+  const minutes = minutesOfDay(date);
+  const morningOpen = 9 * 60 + 30;
+  const morningClose = 11 * 60 + 30;
+  const afternoonOpen = 13 * 60;
+  const afternoonClose = 15 * 60;
+
+  if (isAShareTradingDay(date)) {
+    if (minutes < morningOpen) return stamp(setTime(date, 9, 30));
+    if (minutes >= morningClose && minutes < afternoonOpen) return stamp(setTime(date, 13, 0));
+    if (minutes < afternoonClose) return stamp(date);
+  }
+
+  for (let offset = 1; offset <= 45; offset += 1) {
+    const candidate = new Date(date);
+    candidate.setDate(date.getDate() + offset);
+    if (isAShareTradingDay(candidate)) return stamp(setTime(candidate, 9, 30));
+  }
+  return "-";
+}
+
+export function getTradingSessionStatus(date = new Date()): TradingSessionStatus {
+  const session = getAShareTradingSession(date);
+  return {
+    market: "A股",
+    open: session.open,
+    reason: session.reason,
+    date: dateKey(date),
+    checkedAt: stamp(date),
+    nextOpenAt: getNextAShareOpenAt(date),
+    sessions: aShareSessions,
+    source: aShareCalendarSource
+  };
+}
+
 function appendOrderReason(order: Order, reason: string) {
   return order.reason?.includes(reason) ? order.reason : order.reason ? `${order.reason}；${reason}` : reason;
 }
@@ -684,6 +749,7 @@ function isContinuousTradingTimeLabel(time: string) {
 export function normalizeOrderTradingCalendar(state: QuantState): QuantState {
   const next = cloneState(state);
   const tradingSession = getAShareTradingSession(next.baseTime);
+  next.marketSession = getTradingSessionStatus(next.baseTime);
   next.orders = next.orders.map((order) => {
     if (order.status !== "已成交") return order;
     const offSessionTime = order.time ? !isContinuousTradingTimeLabel(order.time) : false;

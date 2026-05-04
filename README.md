@@ -10,6 +10,7 @@ The project is built for research, demos, education, and prototype validation. I
 - Research workspace: configurable factor formulas, factor calculation, strategy library, strategy toggles, strategy optimization, and MiroFish-style market scenario simulation adapter.
 - Signal selection: ranks tradable A-share and ETF quotes with factor bias, momentum, liquidity, and position constraints.
 - Auto trading loop: generates simulated buy/sell orders from signals, handles stop-loss, take-profit, overweight trimming, cash balance, and mock fills.
+- Trading calendar guard: exposes the current A-share trading session, holiday reason, next open time, and blocks mock fills outside continuous auction sessions.
 - Backtesting and analytics: task creation, execution progress simulation, result analysis, attribution, and stress scenarios.
 - Risk management: VaR, ES, drawdown, leverage, concentration, rule toggles, and audit logs.
 - One-click workflow: runs data sync, quality checks, factor calculation, MiroFish simulation, strategy optimization, backtesting, signal selection, auto trading, and risk refresh.
@@ -82,6 +83,7 @@ Read endpoints:
 - `GET /api/backtests`
 - `GET /api/backtest-results`
 - `GET /api/market-quotes`
+- `GET /api/trading/session`
 - `GET /api/stock-signals`
 - `GET /api/auto-trade-runs`
 - `GET /api/orders`
