@@ -191,6 +191,10 @@ export function saveSystemConfig(config: unknown) {
   return post("/api/system-config", config);
 }
 
+export function syncQuantToolbox() {
+  return post("/api/quant-toolbox/sync");
+}
+
 export function clearLogs() {
   return post("/api/logs/clear");
 }

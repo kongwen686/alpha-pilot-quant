@@ -20,7 +20,7 @@ export interface DataProviderConfig {
   id: string;
   name: string;
   category: string;
-  provider: "Tencent" | "Yahoo" | "AlphaVantage" | "IBKR" | "Exchange" | "Manual";
+  provider: "Tencent" | "Yahoo" | "AlphaVantage" | "IBKR" | "Exchange" | "AkShare" | "TuShare" | "CCXT" | "Manual";
   endpoint: string;
   frequency: string;
   symbols: string[];
@@ -77,6 +77,19 @@ export interface DataAggregateInsight {
   status: Status;
   detail: string;
   updatedAt: string;
+}
+
+export interface QuantToolResource {
+  id: string;
+  name: string;
+  category: "数据源" | "Broker API" | "回测框架" | "指标分析" | "组合优化" | "风险归因" | "数据库" | "机器学习";
+  repo: string;
+  useCase: string;
+  integration: "已接入" | "适配中" | "候选";
+  priority: "高" | "中" | "低";
+  status: Status;
+  mapping: string;
+  note: string;
 }
 
 export interface Factor {
@@ -412,6 +425,7 @@ export interface QuantState {
   dataSubscriptions: DataSubscription[];
   dataSyncRuns: DataSyncRun[];
   dataAggregateInsights: DataAggregateInsight[];
+  quantToolbox: QuantToolResource[];
   factors: Factor[];
   factorConfigs: FactorConfig[];
   miroFishConfig: MiroFishConfig;
@@ -448,6 +462,23 @@ const names = ["03-01", "03-08", "03-15", "03-22", "03-29", "04-05", "04-12", "0
 let localIdSequence = 0;
 
 export const marketLabels = names;
+
+const quantToolboxCatalog: QuantToolResource[] = [
+  { id: "qt-akshare", name: "AkShare", category: "数据源", repo: "akfamily/akshare", useCase: "A 股、宏观、基金、期货等免费数据接入", integration: "适配中", priority: "高", status: "运行中", mapping: "数据源管理 / 自动同步", note: "用于补齐国内免费行情和宏观数据接口" },
+  { id: "qt-tushare", name: "TuShare", category: "数据源", repo: "waditu/tushare", useCase: "A 股历史行情、财务和指数成分数据", integration: "候选", priority: "高", status: "暂停", mapping: "数据订阅 / 因子计算", note: "需要 token，适合生产级历史数据补全" },
+  { id: "qt-yfinance", name: "yfinance", category: "数据源", repo: "ranaroussi/yfinance", useCase: "美股和 ETF 历史行情试验源", integration: "已接入", priority: "中", status: "正常", mapping: "数据源管理", note: "用于海外标的研究和轻量回测" },
+  { id: "qt-ccxt", name: "CCXT", category: "Broker API", repo: "ccxt/ccxt", useCase: "数字资产交易所行情和订单 API", integration: "候选", priority: "中", status: "暂停", mapping: "交易执行 / Broker 网关", note: "适合作为多市场 Broker 适配模板" },
+  { id: "qt-ib-insync", name: "ib_insync", category: "Broker API", repo: "erdewit/ib_insync", useCase: "Interactive Brokers 订单、账户和行情接入", integration: "已接入", priority: "高", status: "正常", mapping: "交易执行 / 自动交易", note: "与现有 IBKR 配置合并为券商 API 网关" },
+  { id: "qt-vnpy", name: "vn.py", category: "Broker API", repo: "vnpy/vnpy", useCase: "国内期货、股票和多柜台交易网关", integration: "候选", priority: "高", status: "暂停", mapping: "交易执行 / 订单管理", note: "适合扩展 CTP、IB、交易所仿真等网关" },
+  { id: "qt-backtrader", name: "Backtrader", category: "回测框架", repo: "mementum/backtrader", useCase: "事件驱动策略回测和交易回放", integration: "候选", priority: "中", status: "暂停", mapping: "回测任务 / 策略开发", note: "可补齐撮合、滑点和手续费模型" },
+  { id: "qt-vectorbt", name: "vectorbt", category: "回测框架", repo: "polakowo/vectorbt", useCase: "向量化组合回测和参数网格搜索", integration: "适配中", priority: "高", status: "运行中", mapping: "策略库调优 / 回测结果", note: "用于加速策略库参数搜索" },
+  { id: "qt-quantstats", name: "QuantStats", category: "指标分析", repo: "ranaroussi/quantstats", useCase: "收益、回撤、风险收益报告", integration: "适配中", priority: "高", status: "运行中", mapping: "回测结果 / 风险指标", note: "强化回测分析报告和组合指标" },
+  { id: "qt-pyfolio", name: "pyfolio", category: "风险归因", repo: "quantopian/pyfolio", useCase: "绩效归因、滚动风险和交易分析", integration: "候选", priority: "中", status: "暂停", mapping: "风险分析 / 交易监控", note: "可作为交易归因报表模板" },
+  { id: "qt-pypfopt", name: "PyPortfolioOpt", category: "组合优化", repo: "robertmartin8/PyPortfolioOpt", useCase: "均值方差、HRP 和约束组合优化", integration: "适配中", priority: "高", status: "运行中", mapping: "持仓管理 / 风险预算", note: "用于自动交易前的资金分配和风险预算" },
+  { id: "qt-riskfolio", name: "Riskfolio-Lib", category: "组合优化", repo: "dcajasn/Riskfolio-Lib", useCase: "CVaR、风险平价和多目标组合优化", integration: "候选", priority: "高", status: "暂停", mapping: "风险管理 / 风控规则", note: "补齐尾部风险约束和风险平价能力" },
+  { id: "qt-arcticdb", name: "ArcticDB", category: "数据库", repo: "man-group/ArcticDB", useCase: "时间序列行情和特征仓储", integration: "候选", priority: "中", status: "暂停", mapping: "数据仓库", note: "用于替代或增强本地 JSONL 数仓" },
+  { id: "qt-qlib", name: "Microsoft Qlib", category: "机器学习", repo: "microsoft/qlib", useCase: "机器学习量化研究、Alpha 模型和数据集流水线", integration: "候选", priority: "中", status: "暂停", mapping: "因子研究 / 策略开发", note: "适合后续接入模型训练和 Alpha 评估" }
+];
 
 export function createInitialState(): QuantState {
   const baseTime = new Date("2024-05-24T14:30:00");
@@ -516,6 +547,7 @@ export function createInitialState(): QuantState {
       { id: "dai-2", name: "订阅活跃度", scope: "数据订阅", value: 80, unit: "%", trend: "稳定", status: "正常", detail: "免费源、券商 API 和专业数据商组合可用", updatedAt: "2024-05-24 14:30:00" },
       { id: "dai-3", name: "聚合质量分", scope: "数据湖", value: 98, unit: "分", trend: "稳定", status: "正常", detail: "清洗、完整性和及时性均通过", updatedAt: "2024-05-24 14:30:00" }
     ],
+    quantToolbox: quantToolboxCatalog,
     factors: [
       { id: "f-1", name: "Momentum_20D", ic: 0.086, icir: 1.23, winRate: 63.2, signal: "强", enabled: true },
       { id: "f-2", name: "Volatility_20D", ic: -0.032, icir: -0.56, winRate: 42.1, signal: "弱", enabled: true },
@@ -679,6 +711,7 @@ export function cloneState(state: QuantState): QuantState {
     dataSubscriptions: (state.dataSubscriptions ?? createInitialState().dataSubscriptions).map((item) => ({ ...item, markets: [...item.markets] })),
     dataSyncRuns: (state.dataSyncRuns ?? createInitialState().dataSyncRuns).map((item) => ({ ...item, providers: [...item.providers] })),
     dataAggregateInsights: (state.dataAggregateInsights ?? createInitialState().dataAggregateInsights).map((item) => ({ ...item })),
+    quantToolbox: (state.quantToolbox ?? createInitialState().quantToolbox).map((item) => ({ ...item })),
     factors: state.factors.map((item) => ({ ...item })),
     factorConfigs: (state.factorConfigs ?? createInitialState().factorConfigs).map((item) => ({ ...item })),
     miroFishConfig: { ...(state.miroFishConfig ?? createInitialState().miroFishConfig), dependencies: [...(state.miroFishConfig?.dependencies ?? createInitialState().miroFishConfig.dependencies)] },
@@ -1704,6 +1737,127 @@ export function updateSystemConfig(state: QuantState, input: Partial<SystemConfi
     updatedAt: stamp(new Date())
   };
   addLog(next, "系统管理", "更新交易模式、风控模式、自动交易和审计保留配置", "quant_admin");
+  return next;
+}
+
+export function syncQuantToolbox(state: QuantState): QuantState {
+  const next = cloneState(state);
+  const updatedAt = stamp(new Date());
+  const activated = new Set(["qt-akshare", "qt-yfinance", "qt-ib-insync", "qt-vectorbt", "qt-quantstats", "qt-pypfopt"]);
+  const adapting = new Set(["qt-tushare", "qt-ccxt", "qt-vnpy", "qt-riskfolio", "qt-qlib"]);
+
+  next.quantToolbox = quantToolboxCatalog.map((tool) => ({
+    ...tool,
+    integration: activated.has(tool.id) ? "已接入" : adapting.has(tool.id) ? "适配中" : tool.integration,
+    status: activated.has(tool.id) ? "正常" : adapting.has(tool.id) ? "运行中" : tool.status
+  }));
+
+  const providerConfigs: DataProviderConfig[] = [
+    { id: "provider-akshare", name: "AkShare 国内免费数据", category: "行情/宏观/基金", provider: "AkShare", endpoint: "akshare Python adapter", frequency: "日频/分钟/专题数据", symbols: ["sh000001", "sz399001", "sh600519", "fund_etf_spot_em"], authMode: "none", enabled: true, status: "正常", lastSync: updatedAt, note: "量化百宝箱同步：补齐 A 股、宏观、基金和期货免费数据" },
+    { id: "provider-tushare-pro", name: "TuShare Pro", category: "行情/财务/指数成分", provider: "TuShare", endpoint: "tushare.pro API", frequency: "日频/财务报告期", symbols: ["000300.SH", "000905.SH", "600519.SH"], authMode: "api-key", enabled: false, status: "暂停", lastSync: "-", note: "量化百宝箱同步：需要 TUSHARE_TOKEN 后启用，用于历史数据补全" },
+    { id: "provider-ccxt", name: "CCXT Crypto Broker", category: "行情/交易执行", provider: "CCXT", endpoint: "ccxt exchange adapters", frequency: "实时/订单/账户", symbols: ["BTC/USDT", "ETH/USDT"], authMode: "api-key", enabled: false, status: "暂停", lastSync: "-", note: "量化百宝箱同步：作为多 Broker API 适配模板" },
+    { id: "provider-vnpy", name: "vn.py 多柜台网关", category: "交易执行", provider: "Manual", endpoint: "vn.py gateway adapters", frequency: "实时/订单/账户", symbols: ["CTP", "IB", "SSE"], authMode: "terminal", enabled: false, status: "暂停", lastSync: "-", note: "量化百宝箱同步：预留国内柜台和期货交易网关" }
+  ];
+  providerConfigs.forEach((config) => {
+    const index = next.dataProviderConfigs.findIndex((item) => item.id === config.id);
+    if (index >= 0) next.dataProviderConfigs[index] = { ...next.dataProviderConfigs[index], ...config };
+    else next.dataProviderConfigs.push(config);
+  });
+
+  const dataSources: DataSource[] = [
+    { id: "ds-akshare", name: "AkShare 综合数据", category: "免费数据源", endpoint: "akshare adapter", status: "正常", latency: 88, rows: 0, quality: 96.8, subscribed: true, latestUpdate: updatedAt },
+    { id: "ds-broker-api", name: "Broker API 网关", category: "交易执行", endpoint: "IBKR / CCXT / vn.py", status: "运行中", latency: 36, rows: 0, quality: 94.5, subscribed: true, latestUpdate: updatedAt }
+  ];
+  dataSources.forEach((source) => {
+    const index = next.dataSources.findIndex((item) => item.id === source.id);
+    if (index >= 0) next.dataSources[index] = { ...next.dataSources[index], ...source };
+    else next.dataSources.push(source);
+  });
+
+  const subscriptions: DataSubscription[] = [
+    { id: "sub-akshare", provider: "AkShare", dataset: "A股/宏观/基金/期货免费数据", level: "免费/半免费", frequency: "日频/分钟", markets: ["CN"], owner: "数据管理员", cost: 0, status: "正常", renewalDate: "长期" },
+    { id: "sub-tushare", provider: "TuShare Pro", dataset: "历史行情/财务/指数成分", level: "免费/半免费", frequency: "日频/报告期", markets: ["CN"], owner: "研究员", cost: 0, status: "暂停", renewalDate: "配置 token 后启用" },
+    { id: "sub-broker-api", provider: "IBKR / CCXT / vn.py", dataset: "订单/账户/行情网关", level: "券商API", frequency: "实时", markets: ["CN", "US", "Crypto"], owner: "交易员", cost: 0, status: "运行中", renewalDate: "按券商授权" }
+  ];
+  subscriptions.forEach((subscription) => {
+    const index = next.dataSubscriptions.findIndex((item) => item.id === subscription.id);
+    if (index >= 0) next.dataSubscriptions[index] = { ...next.dataSubscriptions[index], ...subscription };
+    else next.dataSubscriptions.push(subscription);
+  });
+
+  const factorConfigs: FactorConfig[] = [
+    { id: "fc-rsi-14", factorName: "RSI_14D", formula: "ta.rsi(close, 14)", lookback: 14, weight: 0.18, universe: "全A流动性池", rebalance: "日频", enabled: true, status: "正常", lastRun: updatedAt },
+    { id: "fc-atr-20", factorName: "ATR_20D", formula: "ta.atr(high, low, close, 20)", lookback: 20, weight: 0.16, universe: "全A流动性池", rebalance: "日频", enabled: true, status: "正常", lastRun: updatedAt },
+    { id: "fc-risk-budget", factorName: "Portfolio_Risk_Budget", formula: "pypfopt_hrp_weight(volatility, covariance, risk_limit)", lookback: 60, weight: 0.2, universe: "持仓池", rebalance: "周频", enabled: true, status: "正常", lastRun: updatedAt }
+  ];
+  factorConfigs.forEach((config) => {
+    const index = next.factorConfigs.findIndex((item) => item.id === config.id);
+    if (index >= 0) next.factorConfigs[index] = { ...next.factorConfigs[index], ...config };
+    else next.factorConfigs.push(config);
+  });
+
+  const services: ServiceHealth[] = [
+    { name: "Broker API 网关", status: "运行中", detail: "IBKR / CCXT / vn.py 适配层", uptime: "99.90%" },
+    { name: "量化工具适配器", status: "正常", detail: "AkShare / vectorbt / QuantStats", uptime: "99.93%" },
+    { name: "组合优化服务", status: "运行中", detail: "PyPortfolioOpt 风险预算", uptime: "99.88%" }
+  ];
+  services.forEach((service) => {
+    const index = next.services.findIndex((item) => item.name === service.name);
+    if (index >= 0) next.services[index] = { ...next.services[index], ...service };
+    else next.services.push(service);
+  });
+
+  const riskRule: RiskRule = { id: "r-quant-toolbox-budget", name: "组合优化风险预算", scope: "组合", threshold: "单标的预算来自 PyPortfolioOpt/TradingAgents 双重约束", status: "正常", triggerCount: 0 };
+  const riskRuleIndex = next.riskRules.findIndex((item) => item.id === riskRule.id);
+  if (riskRuleIndex >= 0) next.riskRules[riskRuleIndex] = { ...next.riskRules[riskRuleIndex], ...riskRule };
+  else next.riskRules.push(riskRule);
+
+  const toolboxInsight: DataAggregateInsight = {
+    id: "dai-quant-toolbox",
+    name: "量化工具覆盖率",
+    scope: "工具接入",
+    value: Math.round((next.quantToolbox.filter((tool) => tool.integration === "已接入").length / next.quantToolbox.length) * 100),
+    unit: "%",
+    trend: "上升",
+    status: "运行中",
+    detail: "已将 AkShare、IBKR、vectorbt、QuantStats、PyPortfolioOpt 纳入系统适配图谱",
+    updatedAt
+  };
+  next.dataAggregateInsights = [
+    toolboxInsight,
+    ...next.dataAggregateInsights.filter((item) => item.id !== "dai-quant-toolbox")
+  ].slice(0, 8);
+
+  next.architecture = next.architecture.map((layer) => {
+    const additions = layer.layer === "数据处理层"
+      ? ["量化工具适配器"]
+      : layer.layer === "策略研究层"
+        ? ["vectorbt 参数搜索", "QuantStats 绩效报告"]
+        : layer.layer === "交易执行层"
+          ? ["Broker API 网关"]
+          : layer.layer === "基础设施层"
+            ? ["时间序列仓储适配"]
+            : [];
+    return { ...layer, modules: Array.from(new Set([...layer.modules, ...additions])) };
+  });
+
+  const toolboxOptimization: StrategyOptimization = {
+    id: `so-toolbox-${Date.now()}`,
+    strategy: "系统级工具链",
+    beforeSharpe: 1.12,
+    afterSharpe: 1.28,
+    suggestedFactors: ["RSI_14D", "ATR_20D", "Portfolio_Risk_Budget"],
+    capitalShift: 160_000,
+    status: "已完成",
+    summary: "量化百宝箱同步：引入技术指标、组合优化和 Broker API 适配层，提升研究到交易闭环",
+    time: updatedAt
+  };
+  next.strategyOptimizations = [
+    toolboxOptimization,
+    ...next.strategyOptimizations
+  ].slice(0, 20);
+
+  addLog(next, "系统管理", "量化百宝箱同步完成：数据源、Broker API、回测分析、组合优化和风险预算能力已纳入系统", "quant-toolbox");
   return next;
 }
 

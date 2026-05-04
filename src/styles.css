@@ -920,6 +920,17 @@ button {
     minmax(260px, 1.2fr);
 }
 
+.quant-toolbox-table .six {
+  min-width: 1260px;
+  grid-template-columns:
+    minmax(190px, 1fr)
+    minmax(130px, 0.65fr)
+    minmax(150px, 0.75fr)
+    minmax(100px, 0.5fr)
+    minmax(240px, 1.2fr)
+    minmax(360px, 1.85fr);
+}
+
 .order-table .six {
   min-width: 1120px;
   grid-template-columns:

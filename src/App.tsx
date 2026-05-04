@@ -58,6 +58,7 @@ import {
   type MiroFishScenario,
   type Order,
   type Position,
+  type QuantToolResource,
   type QuantState,
   type RiskIndicator,
   type RiskRule,
@@ -814,6 +815,9 @@ function SystemManagement({ view, state, apply }: { view: ViewId; state: QuantSt
         </Panel>
         <Panel title="系统运维">
           <ServiceList services={state.services} apply={apply} />
+        </Panel>
+        <Panel title="量化百宝箱接入图谱" action={<button onClick={() => apply(api.syncQuantToolbox)}><Boxes size={14} />同步工具链</button>}>
+          <QuantToolboxTable tools={state.quantToolbox ?? []} />
         </Panel>
         <Panel title="基础设施资源">
           <InfraGrid />
@@ -1658,7 +1662,7 @@ function ProviderConfigForm({ apply }: { apply: ApplyAction }) {
     <form className="inline-form" onSubmit={submit}>
       <label>接口名称<input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label>
       <label>分类<input value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })} /></label>
-      <label>供应商<select value={form.provider} onChange={(event) => setForm({ ...form, provider: event.target.value })}><option>Tencent</option><option>Yahoo</option><option>AlphaVantage</option><option>IBKR</option><option>Exchange</option><option>Manual</option></select></label>
+      <label>供应商<select value={form.provider} onChange={(event) => setForm({ ...form, provider: event.target.value })}><option>Tencent</option><option>Yahoo</option><option>AlphaVantage</option><option>IBKR</option><option>Exchange</option><option>AkShare</option><option>TuShare</option><option>CCXT</option><option>Manual</option></select></label>
       <label>鉴权<select value={form.authMode} onChange={(event) => setForm({ ...form, authMode: event.target.value })}><option>none</option><option>api-key</option><option>oauth</option><option>terminal</option></select></label>
       <label>端点<input value={form.endpoint} onChange={(event) => setForm({ ...form, endpoint: event.target.value })} /></label>
       <label>频率<input value={form.frequency} onChange={(event) => setForm({ ...form, frequency: event.target.value })} /></label>
@@ -1979,6 +1983,25 @@ function RiskRuleForm({ apply }: { apply: ApplyAction }) {
       <label>阈值<input value={form.threshold} onChange={(event) => setForm({ ...form, threshold: event.target.value })} /></label>
       <button type="submit"><Shield size={14} />保存规则</button>
     </form>
+  );
+}
+
+function QuantToolboxTable({ tools }: { tools: QuantToolResource[] }) {
+  if (tools.length === 0) return <p className="empty">暂无量化百宝箱工具目录</p>;
+  return (
+    <div className="table quant-toolbox-table">
+      <div className="thead six"><span>工具</span><span>分类</span><span>接入状态</span><span>优先级</span><span>系统映射</span><span>用途/说明</span></div>
+      {tools.map((tool) => (
+        <div className="trow six" key={tool.id}>
+          <span>{tool.name}<small>{tool.repo}</small></span>
+          <span>{tool.category}</span>
+          <span className="row-actions"><Badge status={tool.status} label={tool.integration} /></span>
+          <span>{tool.priority}</span>
+          <span>{tool.mapping}</span>
+          <span>{tool.useCase}<small>{tool.note}</small></span>
+        </div>
+      ))}
+    </div>
   );
 }
 
