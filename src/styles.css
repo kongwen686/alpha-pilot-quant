@@ -499,13 +499,24 @@ button {
   min-height: 208px;
 }
 
+.backtest-curve {
+  min-height: 420px;
+}
+
 .legend {
   display: flex;
+  flex-wrap: wrap;
   gap: 18px;
   align-items: center;
   color: var(--muted);
   font-size: 12px;
   margin: 4px 0 6px;
+}
+
+.backtest-curve .legend small {
+  margin-left: auto;
+  color: #88a6ca;
+  line-height: 1.4;
 }
 
 .dot {
@@ -526,15 +537,39 @@ button {
   overflow: visible;
 }
 
+.backtest-curve svg {
+  height: 300px;
+  margin-top: 6px;
+  border-radius: 6px;
+  background:
+    linear-gradient(180deg, rgba(47, 151, 255, 0.08), rgba(47, 151, 255, 0.01)),
+    rgba(7, 18, 30, 0.18);
+}
+
 .grid-line {
   stroke: rgba(143, 164, 191, 0.16);
   stroke-width: 0.45;
+}
+
+.chart-zero-line {
+  stroke: rgba(216, 229, 247, 0.34);
+  stroke-width: 0.55;
+  stroke-dasharray: 2 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.chart-area {
+  fill: rgba(47, 151, 255, 0.14);
 }
 
 .chart-line {
   stroke: var(--blue);
   stroke-width: 1.8;
   vector-effect: non-scaling-stroke;
+}
+
+.strategy-line {
+  stroke-width: 2.3;
 }
 
 .green-line {
@@ -545,11 +580,59 @@ button {
   stroke: #e8c94d;
 }
 
+.benchmark-line {
+  stroke-width: 1.5;
+  stroke-dasharray: 3 2;
+}
+
+.chart-tick-label,
+.chart-end-label {
+  fill: #9eb7d6;
+  font-size: 3px;
+}
+
+.chart-end-label {
+  fill: #dbe9fb;
+  font-weight: 700;
+}
+
+.chart-endpoint {
+  fill: var(--blue);
+  stroke: #dbe9fb;
+  stroke-width: 0.55;
+}
+
 .axis {
   display: flex;
   justify-content: space-between;
   color: var(--muted);
   font-size: 12px;
+}
+
+.curve-stats {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.curve-stats div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  padding: 9px 10px;
+  border-radius: 6px;
+  background: rgba(143, 164, 191, 0.07);
+}
+
+.curve-stats span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.curve-stats b {
+  color: #dbe9fb;
+  font-size: 14px;
 }
 
 .donut-wrap,
@@ -1384,6 +1467,7 @@ button {
   .content-grid.two,
   .inline-form,
   .session-grid,
+  .curve-stats,
   .trade-metrics,
   .automation-status,
   .insight-grid,
@@ -1438,6 +1522,10 @@ button {
 
   .metric-grid {
     grid-template-columns: 1fr;
+  }
+
+  .backtest-curve svg {
+    height: 240px;
   }
 
   .donut-wrap,

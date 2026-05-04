@@ -631,7 +631,7 @@ function Backtest({ view, state, apply }: { view: ViewId; state: QuantState; app
     return (
       <div className="content-grid two">
         <Panel title="回测收益曲线">
-          <LineChartCard values={state.marketSeries.map((v, i) => v - i * 0.28)} labels={state.marketLabels ?? marketLabels} />
+          <BacktestCurveCard results={state.backtestResults} tasks={state.backtests} />
         </Panel>
         <Panel title="回测结果库">
           <BacktestResultTable results={state.backtestResults} />
@@ -934,6 +934,170 @@ function LineChartCard({ values, labels }: { values: number[]; labels: string[] 
         <polyline points={points} fill="none" className="chart-line" />
       </svg>
       <div className="axis">{labels.filter((_, i) => i % 2 === 0).map((label) => <span key={label}>{label}</span>)}</div>
+    </div>
+  );
+}
+
+type BacktestCurvePoint = {
+  label: string;
+  strategy: number;
+  benchmark: number;
+};
+
+type BacktestCurve = {
+  strategy: string;
+  benchmark: string;
+  period: string;
+  cumulativeReturn: number;
+  benchmarkReturn: number;
+  excessReturn: number;
+  maxDrawdown: number;
+  sharpe: number;
+  points: BacktestCurvePoint[];
+  xLabels: string[];
+};
+
+function parseBacktestPeriod(period: string) {
+  const matches = period.match(/\d{4}-\d{2}-\d{2}/g) ?? [];
+  const start = matches[0] ? new Date(`${matches[0]}T00:00:00`) : new Date("2021-01-01T00:00:00");
+  const end = matches[1] ? new Date(`${matches[1]}T00:00:00`) : new Date("2024-05-24T00:00:00");
+  const safeEnd = end > start ? end : new Date(start.getTime() + 365 * 24 * 60 * 60 * 1000);
+  const days = Math.max(30, Math.round((safeEnd.getTime() - start.getTime()) / 86_400_000));
+  return { start, days, years: Math.max(0.25, days / 365.25) };
+}
+
+function stableHash(text: string) {
+  return Array.from(text).reduce((hash, char) => ((hash << 5) - hash + char.charCodeAt(0)) | 0, 17);
+}
+
+function formatCurveDate(date: Date) {
+  const year = String(date.getFullYear()).slice(-2);
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  return `${year}-${month}`;
+}
+
+function landCurveAtTarget(values: number[], target: number) {
+  const first = values[0] ?? 0;
+  const last = values[values.length - 1] ?? target;
+  return values.map((value, index) => {
+    const t = values.length > 1 ? index / (values.length - 1) : 1;
+    return value - first * (1 - t) - (last - target) * t;
+  });
+}
+
+function buildBacktestCurve(results: BacktestResult[], tasks: BacktestTask[]): BacktestCurve | null {
+  const latestResult: BacktestResult | undefined = results.length > 0 ? results[0] : undefined;
+  const firstTask: BacktestTask | undefined = tasks.length > 0 ? tasks[0] : undefined;
+  const source: BacktestResult | BacktestTask | undefined = latestResult ?? tasks.find((task) => task.status === "已完成") ?? firstTask;
+  if (!source) return null;
+
+  const { start, days, years } = parseBacktestPeriod(source.period);
+  const annualReturn = source.annualReturn || 0;
+  const excessAnnualReturn = "excessReturn" in source ? source.excessReturn : Math.max(0, annualReturn - 6.5);
+  const benchmarkAnnualReturn = annualReturn - excessAnnualReturn;
+  const volatility = "volatility" in source ? source.volatility : Math.max(6, source.maxDrawdown * 1.7);
+  const maxDrawdown = Math.max(1, source.maxDrawdown);
+  const seed = Math.abs(stableHash(`${source.strategy}-${source.period}-${source.benchmark}`));
+  const count = 96;
+  const targetStrategy = (Math.pow(1 + annualReturn / 100, years) - 1) * 100;
+  const targetBenchmark = (Math.pow(1 + benchmarkAnnualReturn / 100, years) - 1) * 100;
+  const rawStrategy: number[] = [];
+  const rawBenchmark: number[] = [];
+
+  for (let index = 0; index < count; index += 1) {
+    const t = index / (count - 1);
+    const waveA = Math.sin((t * 5.4 + (seed % 11) / 7) * Math.PI);
+    const waveB = Math.sin((t * 15.2 + (seed % 17) / 5) * Math.PI) * 0.35;
+    const rotation = Math.cos((t * 8.1 + (seed % 13) / 9) * Math.PI) * 0.22;
+    const earlyPullback = -maxDrawdown * 0.28 * Math.exp(-Math.pow((t - 0.22) / 0.06, 2));
+    const stressDrawdown = -maxDrawdown * 0.78 * Math.exp(-Math.pow((t - 0.62) / 0.08, 2));
+    const rebound = Math.max(0, t - 0.7) * maxDrawdown * 0.32;
+    const trend = (Math.pow(1 + annualReturn / 100, years * t) - 1) * 100;
+    const benchmarkTrend = (Math.pow(1 + benchmarkAnnualReturn / 100, years * t) - 1) * 100;
+
+    rawStrategy.push(trend + volatility * 0.18 * (waveA + waveB + rotation) + earlyPullback + stressDrawdown + rebound);
+    rawBenchmark.push(benchmarkTrend + volatility * 0.1 * (Math.sin((t * 4.8 + 0.4) * Math.PI) + waveB) + earlyPullback * 0.45 + stressDrawdown * 0.35);
+  }
+
+  const strategyValues = landCurveAtTarget(rawStrategy, targetStrategy);
+  const benchmarkValues = landCurveAtTarget(rawBenchmark, targetBenchmark);
+  const points = strategyValues.map((strategy, index) => {
+    const date = new Date(start.getTime() + (days * index / (count - 1)) * 86_400_000);
+    return {
+      label: formatCurveDate(date),
+      strategy: Number(strategy.toFixed(2)),
+      benchmark: Number(benchmarkValues[index].toFixed(2))
+    };
+  });
+  const xLabels = [0, 19, 38, 57, 76, 95].map((index) => points[index]?.label ?? "");
+
+  return {
+    strategy: source.strategy,
+    benchmark: source.benchmark,
+    period: source.period,
+    cumulativeReturn: Number(targetStrategy.toFixed(2)),
+    benchmarkReturn: Number(targetBenchmark.toFixed(2)),
+    excessReturn: Number((targetStrategy - targetBenchmark).toFixed(2)),
+    maxDrawdown: Number(maxDrawdown.toFixed(2)),
+    sharpe: source.sharpe,
+    points,
+    xLabels
+  };
+}
+
+function BacktestCurveCard({ results, tasks }: { results: BacktestResult[]; tasks: BacktestTask[] }) {
+  const curve = useMemo(() => buildBacktestCurve(results, tasks), [results, tasks]);
+  if (!curve) return <p className="empty">暂无回测收益曲线</p>;
+
+  const values = curve.points.flatMap((point) => [point.strategy, point.benchmark, 0]);
+  const rawMin = Math.min(...values);
+  const rawMax = Math.max(...values);
+  const margin = Math.max(4, (rawMax - rawMin) * 0.14);
+  const yMin = Math.floor((rawMin - margin) / 5) * 5;
+  const yMax = Math.ceil((rawMax + margin) / 5) * 5;
+  const ySpan = yMax - yMin || 1;
+  const xFor = (index: number) => 7 + (index / (curve.points.length - 1)) * 89;
+  const yFor = (value: number) => 87 - ((value - yMin) / ySpan) * 74;
+  const strategyPoints = curve.points.map((point, index) => `${xFor(index)},${yFor(point.strategy)}`).join(" ");
+  const benchmarkPoints = curve.points.map((point, index) => `${xFor(index)},${yFor(point.benchmark)}`).join(" ");
+  const baselineY = yFor(0);
+  const areaPoints = `${strategyPoints} ${xFor(curve.points.length - 1)},${baselineY} ${xFor(0)},${baselineY}`;
+  const yTicks = Array.from({ length: 5 }, (_, index) => yMax - (ySpan / 4) * index);
+  const lastPoint = curve.points[curve.points.length - 1];
+  const lastX = xFor(curve.points.length - 1);
+
+  return (
+    <div className="chart-wrap backtest-curve">
+      <div className="legend">
+        <span><span className="dot dot-blue" />策略净值</span>
+        <span><span className="dot dot-yellow" />{curve.benchmark}</span>
+        <small>{curve.strategy} / {curve.period}</small>
+      </div>
+      <svg viewBox="0 0 100 100" role="img" aria-label={`${curve.strategy} 回测收益曲线`}>
+        {yTicks.map((tick) => {
+          const y = yFor(tick);
+          return (
+            <g key={tick}>
+              <line x1="7" x2="96" y1={y} y2={y} className="grid-line" />
+              <text x="1.5" y={y + 1.2} className="chart-tick-label">{tick.toFixed(0)}%</text>
+            </g>
+          );
+        })}
+        <line x1="7" x2="96" y1={baselineY} y2={baselineY} className="chart-zero-line" />
+        <polygon points={areaPoints} className="chart-area" />
+        <polyline points={benchmarkPoints} fill="none" className="chart-line yellow-line benchmark-line" />
+        <polyline points={strategyPoints} fill="none" className="chart-line strategy-line" />
+        <circle cx={lastX} cy={yFor(lastPoint.strategy)} r="1.4" className="chart-endpoint" />
+        <text x={Math.min(83, lastX - 11)} y={yFor(lastPoint.strategy) - 2.4} className="chart-end-label">{formatSignedPercent(lastPoint.strategy)}</text>
+      </svg>
+      <div className="axis">{curve.xLabels.map((label, index) => <span key={`${label}-${index}`}>{label}</span>)}</div>
+      <div className="curve-stats">
+        <div><span>累计收益</span><b className={curve.cumulativeReturn >= 0 ? "up" : "down"}>{formatSignedPercent(curve.cumulativeReturn)}</b></div>
+        <div><span>基准收益</span><b className={curve.benchmarkReturn >= 0 ? "up" : "down"}>{formatSignedPercent(curve.benchmarkReturn)}</b></div>
+        <div><span>超额收益</span><b className={curve.excessReturn >= 0 ? "up" : "down"}>{formatSignedPercent(curve.excessReturn)}</b></div>
+        <div><span>最大回撤</span><b className="down">-{curve.maxDrawdown.toFixed(2)}%</b></div>
+        <div><span>夏普比率</span><b>{curve.sharpe.toFixed(2)}</b></div>
+      </div>
     </div>
   );
 }
