@@ -472,6 +472,10 @@ button {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.strategy-library-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .panel {
   min-width: 0;
   padding: 12px;
@@ -732,6 +736,28 @@ button {
     minmax(190px, 1.2fr)
     minmax(130px, 0.8fr)
     minmax(130px, 0.7fr);
+}
+
+.strategy-table .six {
+  min-width: 960px;
+  grid-template-columns:
+    minmax(190px, 1.2fr)
+    minmax(150px, 0.95fr)
+    minmax(120px, 0.7fr)
+    minmax(130px, 0.75fr)
+    minmax(150px, 0.9fr)
+    minmax(160px, 0.95fr);
+}
+
+.strategy-optimization-table .six {
+  min-width: 1280px;
+  grid-template-columns:
+    minmax(180px, 0.85fr)
+    minmax(170px, 0.85fr)
+    minmax(140px, 0.7fr)
+    minmax(140px, 0.7fr)
+    minmax(520px, 2.45fr)
+    minmax(110px, 0.55fr);
 }
 
 .auto-run-table .six {

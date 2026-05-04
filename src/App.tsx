@@ -603,7 +603,7 @@ function Research({ view, state, apply }: { view: ViewId; state: QuantState; app
     );
   }
   return (
-    <div className="content-grid two">
+    <div className="content-grid strategy-library-layout">
       <Panel title="策略库" action={<button onClick={() => apply(api.optimizeStrategies)}><SlidersHorizontal size={14} />策略调优</button>}>
         <StrategyTable strategies={state.strategies} apply={apply} />
       </Panel>
@@ -988,7 +988,7 @@ function Gauge({ state, detailed }: { state: QuantState; detailed?: boolean }) {
 
 function StrategyTable({ strategies, apply, compact }: { strategies: Strategy[]; apply: ApplyAction; compact?: boolean }) {
   return (
-    <div className="table">
+    <div className="table strategy-table">
       <div className="thead six"><span>策略名称</span><span>类型</span><span>状态</span><span>当日收益</span><span>近1年收益</span><span>操作</span></div>
       {strategies.slice(0, compact ? 5 : strategies.length).map((strategy) => (
         <div className="trow six" key={strategy.id}>
@@ -1010,7 +1010,7 @@ function StrategyTable({ strategies, apply, compact }: { strategies: Strategy[];
 function StrategyOptimizationTable({ records }: { records: StrategyOptimization[] }) {
   if (records.length === 0) return <p className="empty">暂无调优记录</p>;
   return (
-    <div className="table">
+    <div className="table strategy-optimization-table">
       <div className="thead six"><span>时间</span><span>策略</span><span>夏普变化</span><span>资金调整</span><span>建议因子</span><span>状态</span></div>
       {records.slice(0, 8).map((record) => (
         <div className="trow six" key={record.id}>
