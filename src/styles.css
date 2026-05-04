@@ -781,6 +781,31 @@ button {
   color: var(--muted);
 }
 
+.warehouse-detail {
+  display: grid;
+  gap: 10px;
+}
+
+.warehouse-path {
+  display: grid;
+  gap: 4px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(143, 164, 191, 0.07);
+}
+
+.warehouse-path span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.warehouse-path b {
+  color: #dceaff;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
 .signal-reasons {
   color: #c7d8f2;
   line-height: 1.4;

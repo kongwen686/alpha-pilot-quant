@@ -261,6 +261,11 @@ const mutationRoutes: Array<{ method: string; pattern: RegExp; handler: Handler 
     method: "PATCH",
     pattern: /^\/api\/data-sources\/([^/]+)\/subscription$/,
     handler: (state, _body, req) => subscribeSource(state, getParam(new URL(req.url ?? "/", "http://local").pathname, /^\/api\/data-sources\/([^/]+)\/subscription$/))
+  },
+  {
+    method: "POST",
+    pattern: /^\/api\/data-warehouse\/refresh$/,
+    handler: (state) => appendLog(state, "数据中心", "刷新本地数仓文件统计", "warehouse-monitor")
   }
 ];
 

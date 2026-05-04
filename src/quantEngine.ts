@@ -353,6 +353,16 @@ export interface DataWarehouseStats {
   logicalRows: number;
   logicalBytes: number;
   updatedAt: string;
+  files: DataWarehouseFile[];
+}
+
+export interface DataWarehouseFile {
+  path: string;
+  dataset: string;
+  partition: string;
+  bytes: number;
+  rows: number;
+  updatedAt: string;
 }
 
 export interface QuantState {
@@ -414,7 +424,8 @@ export function createInitialState(): QuantState {
       fileCount: 0,
       logicalRows: 0,
       logicalBytes: 0,
-      updatedAt: "-"
+      updatedAt: "-",
+      files: []
     },
     marketSeries: [0, 1.6, 0.4, -0.8, 2.1, 6.2, 10.8, 6.4, 9.8, 12.3, 14.1, 13.2, 15.1],
     marketLabels: names,
@@ -650,7 +661,7 @@ export function cloneState(state: QuantState): QuantState {
     marketLabels: [...(state.marketLabels ?? names)],
     marketQuotes: (state.marketQuotes ?? []).map((item) => ({ ...item })),
     marketSession: { ...(state.marketSession ?? createInitialState().marketSession), sessions: [...(state.marketSession?.sessions ?? createInitialState().marketSession.sessions)] },
-    dataWarehouse: { ...(state.dataWarehouse ?? createInitialState().dataWarehouse) },
+    dataWarehouse: { ...(state.dataWarehouse ?? createInitialState().dataWarehouse), files: [...(state.dataWarehouse?.files ?? [])] },
     cashBalance: Number(state.cashBalance ?? createInitialState().cashBalance),
     baseTime: new Date(state.baseTime)
   };

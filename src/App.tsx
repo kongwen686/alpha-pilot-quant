@@ -481,6 +481,9 @@ function DataCenter({ view, state, apply }: { view: ViewId; state: QuantState; a
         <Panel title="数据仓库指标">
           <DataSnapshot state={state} expanded />
         </Panel>
+        <Panel title="本地仓储明细" action={<button onClick={() => apply(api.refreshWarehouseStats, { label: "刷新统计", success: "仓储统计已刷新" })}><HardDrive size={14} />刷新统计</button>}>
+          <WarehouseFileTable state={state} />
+        </Panel>
         <Panel title="数据源聚合分析">
           <DataAggregatePanel insights={state.dataAggregateInsights} />
         </Panel>
@@ -1264,6 +1267,39 @@ function DataSnapshot({ state, expanded }: { state: QuantState; expanded?: boole
       <Metric title="实际存储" value={formatBytes(actualBytes)} delta={`${warehouse?.fileCount ?? 0} 文件 / ${formatCurrency(warehouse?.actualRows ?? 0)} 落盘行`} icon={HardDrive} />
       <Metric title="估算容量" value={formatBytes(logicalBytes)} delta={`${formatCurrency(logicalRows)} 逻辑行`} icon={Boxes} />
       <Metric title="数据更新" value={lastSync} delta="最新同步" icon={RefreshCw} />
+    </div>
+  );
+}
+
+function WarehouseFileTable({ state }: { state: QuantState }) {
+  const warehouse = state.dataWarehouse;
+  const files = warehouse?.files ?? [];
+  if (files.length === 0) {
+    return (
+      <div className="empty-action">
+        <HardDrive size={22} />
+        <span>暂无本地仓储文件，同步数据后会写入 data/warehouse</span>
+      </div>
+    );
+  }
+  return (
+    <div className="warehouse-detail">
+      <div className="warehouse-path">
+        <span>根目录</span>
+        <b>{warehouse.rootPath}</b>
+      </div>
+      <div className="table">
+        <div className="thead five"><span>数据集</span><span>分区</span><span>大小/行数</span><span>更新时间</span><span>路径</span></div>
+        {files.slice(0, 8).map((file) => (
+          <div className="trow five" key={file.path}>
+            <span>{file.dataset}</span>
+            <span>{file.partition}</span>
+            <span>{formatBytes(file.bytes)}<small>{formatCurrency(file.rows)} 行</small></span>
+            <span>{file.updatedAt}</span>
+            <span><small>{file.path}</small></span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

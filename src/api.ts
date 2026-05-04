@@ -43,6 +43,10 @@ export function runDataQualityCheck() {
   return post("/api/data/quality-check");
 }
 
+export function refreshWarehouseStats() {
+  return post("/api/data-warehouse/refresh");
+}
+
 export function saveDataSource(source: unknown) {
   return post("/api/data-sources", source);
 }

@@ -1,6 +1,6 @@
 import { appendFile, mkdir, readdir, readFile, stat } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
-import type { DataWarehouseStats, MarketQuote } from "../src/quantEngine";
+import { dirname, join, relative, resolve } from "node:path";
+import type { DataWarehouseFile, DataWarehouseStats, MarketQuote } from "../src/quantEngine";
 
 export const warehouseRoot = resolve(process.cwd(), "data/warehouse");
 
@@ -72,21 +72,43 @@ async function countJsonlRows(path: string) {
   return content.trimEnd().split("\n").length;
 }
 
+function inferDataset(path: string) {
+  const normalized = path.replace(/\\/g, "/");
+  if (normalized.startsWith("market_quotes/")) return "实时行情";
+  if (normalized.startsWith("klines/")) return "日K行情";
+  return normalized.split("/")[0] || "unknown";
+}
+
+function inferPartition(path: string) {
+  const match = path.match(/dt=([^/]+)/);
+  return match?.[1] ?? "-";
+}
+
 export async function getWarehouseStats(logicalRows: number): Promise<DataWarehouseStats> {
   await mkdir(warehouseRoot, { recursive: true });
   const files = await listFiles(warehouseRoot);
-  const stats = await Promise.all(files.map(async (path) => {
+  const fileStats: DataWarehouseFile[] = await Promise.all(files.map(async (path) => {
     const [fileStat, rows] = await Promise.all([stat(path), countJsonlRows(path)]);
-    return { bytes: fileStat.size, rows };
+    const relativePath = relative(warehouseRoot, path);
+    return {
+      path: relativePath,
+      dataset: inferDataset(relativePath),
+      partition: inferPartition(relativePath),
+      bytes: fileStat.size,
+      rows,
+      updatedAt: fileStat.mtime.toLocaleString("zh-CN", { hour12: false }).replace(/\//g, "-")
+    };
   }));
+  const sortedFiles = fileStats.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.bytes - a.bytes);
   return {
     rootPath: warehouseRoot,
     storageMode: "local-jsonl",
-    actualBytes: stats.reduce((sum, item) => sum + item.bytes, 0),
-    actualRows: stats.reduce((sum, item) => sum + item.rows, 0),
+    actualBytes: sortedFiles.reduce((sum, item) => sum + item.bytes, 0),
+    actualRows: sortedFiles.reduce((sum, item) => sum + item.rows, 0),
     fileCount: files.length,
     logicalRows,
     logicalBytes: logicalRows * 320,
-    updatedAt: formatTime()
+    updatedAt: formatTime(),
+    files: sortedFiles
   };
 }
