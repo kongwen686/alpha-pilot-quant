@@ -97,6 +97,7 @@ Action endpoints:
 - `POST /api/data/pipeline`
 - `POST /api/data/quality-check`
 - `POST /api/data-warehouse/refresh`
+- `POST /api/data-warehouse/compact`
 - `POST /api/data-provider-configs`
 - `PATCH /api/data-provider-configs/:id/toggle`
 - `POST /api/data-subscriptions`

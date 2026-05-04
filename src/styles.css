@@ -795,6 +795,29 @@ button {
   background: rgba(143, 164, 191, 0.07);
 }
 
+.warehouse-maintenance {
+  display: grid;
+  gap: 4px;
+  padding: 9px 10px;
+  border: 1px solid rgba(37, 217, 144, 0.28);
+  border-radius: 6px;
+  background: rgba(37, 217, 144, 0.08);
+}
+
+.warehouse-maintenance span {
+  color: #a9e8cc;
+  font-size: 12px;
+}
+
+.warehouse-maintenance b {
+  color: #e2fff2;
+  font-size: 13px;
+}
+
+.warehouse-maintenance small {
+  color: var(--muted);
+}
+
 .warehouse-path span {
   color: var(--muted);
   font-size: 12px;

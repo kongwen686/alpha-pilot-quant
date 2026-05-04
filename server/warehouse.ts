@@ -1,6 +1,6 @@
-import { appendFile, mkdir, readdir, readFile, stat } from "node:fs/promises";
+import { appendFile, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
-import type { DataWarehouseFile, DataWarehouseStats, MarketQuote } from "../src/quantEngine";
+import type { DataWarehouseFile, DataWarehouseMaintenance, DataWarehouseStats, MarketQuote } from "../src/quantEngine";
 
 export const warehouseRoot = resolve(process.cwd(), "data/warehouse");
 
@@ -72,6 +72,74 @@ async function countJsonlRows(path: string) {
   return content.trimEnd().split("\n").length;
 }
 
+function parseJsonl(content: string) {
+  if (!content.trim()) return [];
+  return content
+    .trimEnd()
+    .split("\n")
+    .filter((line) => line.trim().length > 0)
+    .map((line) => {
+      try {
+        return JSON.parse(line) as Record<string, unknown>;
+      } catch {
+        return { raw: line };
+      }
+    });
+}
+
+function dedupeKey(relativePath: string, row: Record<string, unknown>, index: number) {
+  const normalized = relativePath.replace(/\\/g, "/");
+  if (normalized.startsWith("klines/") && row.symbol && row.tradeDate) {
+    return `kline:${row.symbol}:${row.tradeDate}`;
+  }
+  if (normalized.startsWith("market_quotes/") && row.symbol && row.timestamp) {
+    return `quote:${row.symbol}:${row.timestamp}`;
+  }
+  if (row.raw) return `raw:${row.raw}`;
+  return `row:${index}:${JSON.stringify(row)}`;
+}
+
+export async function compactWarehouseFiles(): Promise<DataWarehouseMaintenance> {
+  await mkdir(warehouseRoot, { recursive: true });
+  const files = (await listFiles(warehouseRoot)).filter((path) => path.endsWith(".jsonl"));
+  let rowsBefore = 0;
+  let rowsAfter = 0;
+  let bytesBefore = 0;
+  let bytesAfter = 0;
+
+  await Promise.all(files.map(async (path) => {
+    const relativePath = relative(warehouseRoot, path);
+    const beforeStat = await stat(path);
+    const rows = parseJsonl(await readFile(path, "utf8"));
+    const deduped = new Map<string, Record<string, unknown>>();
+    rows.forEach((row, index) => {
+      deduped.set(dedupeKey(relativePath, row, index), row);
+    });
+    const compactedRows = Array.from(deduped.values());
+    const nextContent = compactedRows.length > 0 ? `${compactedRows.map((row) => row.raw ? String(row.raw) : JSON.stringify(row)).join("\n")}\n` : "";
+    await writeFile(path, nextContent, "utf8");
+    const afterStat = await stat(path);
+
+    rowsBefore += rows.length;
+    rowsAfter += compactedRows.length;
+    bytesBefore += beforeStat.size;
+    bytesAfter += afterStat.size;
+  }));
+
+  const bytesSaved = Math.max(0, bytesBefore - bytesAfter);
+  return {
+    type: "compact",
+    filesProcessed: files.length,
+    rowsBefore,
+    rowsAfter,
+    bytesBefore,
+    bytesAfter,
+    bytesSaved,
+    summary: `压缩 ${files.length} 个 JSONL 文件，去重 ${Math.max(0, rowsBefore - rowsAfter)} 行，节省 ${bytesSaved} bytes`,
+    updatedAt: formatTime()
+  };
+}
+
 function inferDataset(path: string) {
   const normalized = path.replace(/\\/g, "/");
   if (normalized.startsWith("market_quotes/")) return "实时行情";
@@ -84,7 +152,7 @@ function inferPartition(path: string) {
   return match?.[1] ?? "-";
 }
 
-export async function getWarehouseStats(logicalRows: number): Promise<DataWarehouseStats> {
+export async function getWarehouseStats(logicalRows: number, lastMaintenance?: DataWarehouseMaintenance): Promise<DataWarehouseStats> {
   await mkdir(warehouseRoot, { recursive: true });
   const files = await listFiles(warehouseRoot);
   const fileStats: DataWarehouseFile[] = await Promise.all(files.map(async (path) => {
@@ -109,6 +177,7 @@ export async function getWarehouseStats(logicalRows: number): Promise<DataWareho
     logicalRows,
     logicalBytes: logicalRows * 320,
     updatedAt: formatTime(),
-    files: sortedFiles
+    files: sortedFiles,
+    lastMaintenance
   };
 }

@@ -45,7 +45,7 @@ import {
   type QuantState
 } from "../src/quantEngine";
 import { ingestRealMarketData } from "./marketData";
-import { getWarehouseStats } from "./warehouse";
+import { compactWarehouseFiles, getWarehouseStats } from "./warehouse";
 
 const PORT = Number(process.env.API_PORT ?? 8787);
 const AUTO_TRADER_INTERVAL_MS = Number(process.env.AUTO_TRADER_INTERVAL_MS ?? 0);
@@ -98,7 +98,7 @@ async function attachWarehouseStats(state: QuantState): Promise<QuantState> {
   const logicalRows = state.dataSources.reduce((sum, source) => sum + source.rows, 0);
   return {
     ...state,
-    dataWarehouse: await getWarehouseStats(logicalRows)
+    dataWarehouse: await getWarehouseStats(logicalRows, state.dataWarehouse?.lastMaintenance)
   };
 }
 
@@ -266,6 +266,15 @@ const mutationRoutes: Array<{ method: string; pattern: RegExp; handler: Handler 
     method: "POST",
     pattern: /^\/api\/data-warehouse\/refresh$/,
     handler: (state) => appendLog(state, "数据中心", "刷新本地数仓文件统计", "warehouse-monitor")
+  },
+  {
+    method: "POST",
+    pattern: /^\/api\/data-warehouse\/compact$/,
+    handler: async (state) => {
+      const maintenance = await compactWarehouseFiles();
+      const next = appendLog(state, "数据中心", maintenance.summary, "warehouse-maintainer");
+      return { ...next, dataWarehouse: { ...next.dataWarehouse, lastMaintenance: maintenance } };
+    }
   }
 ];
 

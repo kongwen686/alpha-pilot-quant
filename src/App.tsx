@@ -481,7 +481,7 @@ function DataCenter({ view, state, apply }: { view: ViewId; state: QuantState; a
         <Panel title="数据仓库指标">
           <DataSnapshot state={state} expanded />
         </Panel>
-        <Panel title="本地仓储明细" action={<button onClick={() => apply(api.refreshWarehouseStats, { label: "刷新统计", success: "仓储统计已刷新" })}><HardDrive size={14} />刷新统计</button>}>
+        <Panel title="本地仓储明细" action={<><button onClick={() => apply(api.refreshWarehouseStats, { label: "刷新统计", success: "仓储统计已刷新" })}><HardDrive size={14} />刷新统计</button><button onClick={() => apply(api.compactWarehouse, { label: "压缩去重", success: "仓储压缩去重已完成" })}><RefreshCw size={14} />压缩去重</button></>}>
           <WarehouseFileTable state={state} />
         </Panel>
         <Panel title="数据源聚合分析">
@@ -1288,6 +1288,13 @@ function WarehouseFileTable({ state }: { state: QuantState }) {
         <span>根目录</span>
         <b>{warehouse.rootPath}</b>
       </div>
+      {warehouse.lastMaintenance && (
+        <div className="warehouse-maintenance">
+          <span>最近维护</span>
+          <b>{warehouse.lastMaintenance.summary}</b>
+          <small>{warehouse.lastMaintenance.updatedAt} / {formatCurrency(warehouse.lastMaintenance.rowsBefore)} 行 {"->"} {formatCurrency(warehouse.lastMaintenance.rowsAfter)} 行 / 节省 {formatBytes(warehouse.lastMaintenance.bytesSaved)}</small>
+        </div>
+      )}
       <div className="table">
         <div className="thead five"><span>数据集</span><span>分区</span><span>大小/行数</span><span>更新时间</span><span>路径</span></div>
         {files.slice(0, 8).map((file) => (

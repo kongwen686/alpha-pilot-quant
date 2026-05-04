@@ -47,6 +47,10 @@ export function refreshWarehouseStats() {
   return post("/api/data-warehouse/refresh");
 }
 
+export function compactWarehouse() {
+  return post("/api/data-warehouse/compact");
+}
+
 export function saveDataSource(source: unknown) {
   return post("/api/data-sources", source);
 }
