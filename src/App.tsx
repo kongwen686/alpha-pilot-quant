@@ -1295,7 +1295,7 @@ function WarehouseFileTable({ state }: { state: QuantState }) {
           <small>{warehouse.lastMaintenance.updatedAt} / {formatCurrency(warehouse.lastMaintenance.rowsBefore)} 行 {"->"} {formatCurrency(warehouse.lastMaintenance.rowsAfter)} 行 / 节省 {formatBytes(warehouse.lastMaintenance.bytesSaved)}</small>
         </div>
       )}
-      <div className="table">
+      <div className="table warehouse-table">
         <div className="thead five"><span>数据集</span><span>分区</span><span>大小/行数</span><span>更新时间</span><span>路径</span></div>
         {files.slice(0, 8).map((file) => (
           <div className="trow five" key={file.path}>
@@ -1329,7 +1329,7 @@ function DataAggregatePanel({ insights }: { insights: DataAggregateInsight[] }) 
 function DataSyncRunTable({ runs }: { runs: DataSyncRun[] }) {
   if (runs.length === 0) return <p className="empty">暂无同步记录</p>;
   return (
-    <div className="table">
+    <div className="table data-sync-table">
       <div className="thead six"><span>时间</span><span>触发</span><span>状态</span><span>接口/记录</span><span>质量/延迟</span><span>摘要</span></div>
       {runs.slice(0, 6).map((run) => (
         <div className="trow six" key={run.id}>
@@ -1344,7 +1344,7 @@ function DataSyncRunTable({ runs }: { runs: DataSyncRun[] }) {
 
 function DataSourceTable({ data, apply, detail, subscriptions }: { data: DataSource[]; apply: ApplyAction; detail?: boolean; subscriptions?: boolean }) {
   return (
-    <div className="table">
+    <div className="table data-source-table">
       <div className="thead six"><span>数据源</span><span>类别</span><span>接口</span><span>质量</span><span>状态</span><span>操作</span></div>
       {data.map((source) => (
         <div className="trow six" key={source.id}>
@@ -1361,7 +1361,7 @@ function DataSourceTable({ data, apply, detail, subscriptions }: { data: DataSou
 
 function DataQualityTable({ rules }: { rules: DataQualityRule[] }) {
   return (
-    <div className="table">
+    <div className="table data-quality-table">
       <div className="thead six"><span>规则</span><span>对象</span><span>维度</span><span>阈值</span><span>评分</span><span>状态</span></div>
       {rules.map((rule) => (
         <div className="trow six" key={rule.id}>
@@ -1375,7 +1375,7 @@ function DataQualityTable({ rules }: { rules: DataQualityRule[] }) {
 
 function SubscriptionTable({ subscriptions, apply }: { subscriptions: DataSubscription[]; apply: ApplyAction }) {
   return (
-    <div className="table">
+    <div className="table subscription-table">
       <div className="thead six"><span>供应商</span><span>数据集</span><span>真实性等级</span><span>频率/市场</span><span>费用</span><span>状态</span></div>
       {subscriptions.map((subscription) => (
         <div className="trow six" key={subscription.id}>
@@ -1648,7 +1648,7 @@ function SignalTable({ signals, apply, compact }: { signals: StockSignal[]; appl
     );
   }
   return (
-    <div className="table">
+    <div className="table signal-table">
       <div className="thead six"><span>标的</span><span>价格/涨跌</span><span>评分</span><span>信号</span><span>目标/风控</span><span>依据</span></div>
       {rows.map((signal) => (
         <div className="trow six" key={signal.symbol}>
@@ -1708,7 +1708,7 @@ function AutoTradeControl({ state, apply }: { state: QuantState; apply: ApplyAct
 function AutoTradeRunTable({ runs }: { runs: AutoTradeRun[] }) {
   if (runs.length === 0) return <p className="empty">暂无自动交易记录</p>;
   return (
-    <div className="table">
+    <div className="table auto-run-table">
       <div className="thead six"><span>时间</span><span>模式</span><span>策略</span><span>信号/入选</span><span>买卖/成交</span><span>结果</span></div>
       {runs.map((run) => (
         <div className="trow six" key={run.id}>
@@ -1724,7 +1724,7 @@ function AutoTradeRunTable({ runs }: { runs: AutoTradeRun[] }) {
 
 function OrderTable({ orders, apply }: { orders: Order[]; apply: ApplyAction }) {
   return (
-    <div className="table">
+    <div className="table order-table">
       <div className="thead six"><span>时间</span><span>策略</span><span>标的</span><span>方向</span><span>价格/数量</span><span>状态</span></div>
       {orders.map((order) => (
         <div className="trow six" key={order.id}>
