@@ -58,6 +58,7 @@ type Handler = (state: QuantState, body: unknown, req: IncomingMessage) => Promi
 
 function normalizeState(raw: QuantState): QuantState {
   const initial = createInitialState();
+  const baseTime = raw.baseTime ? new Date(raw.baseTime) : initial.baseTime;
   const state = {
     ...initial,
     ...raw,
@@ -83,7 +84,7 @@ function normalizeState(raw: QuantState): QuantState {
     marketSession: raw.marketSession ?? initial.marketSession,
     dataWarehouse: raw.dataWarehouse ?? initial.dataWarehouse,
     cashBalance: raw.cashBalance ?? initial.cashBalance,
-    baseTime: new Date(raw.baseTime)
+    baseTime: Number.isNaN(baseTime.getTime()) ? initial.baseTime : baseTime
   };
   return normalizeOrderTradingCalendar({
     ...state,

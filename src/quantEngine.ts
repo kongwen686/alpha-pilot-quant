@@ -31,6 +31,21 @@ export interface DataProviderConfig {
   note: string;
 }
 
+const dataProviderNames = ["Tencent", "Yahoo", "AlphaVantage", "IBKR", "Exchange", "AkShare", "TuShare", "CCXT", "Manual"] as const;
+const authModes = ["none", "api-key", "oauth", "terminal"] as const;
+
+function normalizeDataProvider(value: unknown): DataProviderConfig["provider"] {
+  return typeof value === "string" && dataProviderNames.includes(value as DataProviderConfig["provider"])
+    ? value as DataProviderConfig["provider"]
+    : "Manual";
+}
+
+function normalizeAuthMode(value: unknown): DataProviderConfig["authMode"] {
+  return typeof value === "string" && authModes.includes(value as DataProviderConfig["authMode"])
+    ? value as DataProviderConfig["authMode"]
+    : "none";
+}
+
 export interface DataQualityRule {
   id: string;
   name: string;
@@ -706,9 +721,9 @@ export function cloneState(state: QuantState): QuantState {
   return {
     ...state,
     dataSources: state.dataSources.map((item) => ({ ...item })),
-    dataProviderConfigs: (state.dataProviderConfigs ?? createInitialState().dataProviderConfigs).map((item) => ({ ...item, symbols: [...item.symbols] })),
+    dataProviderConfigs: (state.dataProviderConfigs ?? createInitialState().dataProviderConfigs).map((item) => ({ ...item, provider: normalizeDataProvider(item.provider), authMode: normalizeAuthMode(item.authMode), symbols: [...(item.symbols ?? [])] })),
     dataQualityRules: (state.dataQualityRules ?? createInitialState().dataQualityRules).map((item) => ({ ...item })),
-    dataSubscriptions: (state.dataSubscriptions ?? createInitialState().dataSubscriptions).map((item) => ({ ...item, markets: [...item.markets] })),
+    dataSubscriptions: (state.dataSubscriptions ?? createInitialState().dataSubscriptions).map((item) => ({ ...item, markets: [...(item.markets ?? [])] })),
     dataSyncRuns: (state.dataSyncRuns ?? createInitialState().dataSyncRuns).map((item) => ({ ...item, providers: [...item.providers] })),
     dataAggregateInsights: (state.dataAggregateInsights ?? createInitialState().dataAggregateInsights).map((item) => ({ ...item })),
     quantToolbox: (state.quantToolbox ?? createInitialState().quantToolbox).map((item) => ({ ...item })),
@@ -716,14 +731,14 @@ export function cloneState(state: QuantState): QuantState {
     factorConfigs: (state.factorConfigs ?? createInitialState().factorConfigs).map((item) => ({ ...item })),
     miroFishConfig: { ...(state.miroFishConfig ?? createInitialState().miroFishConfig), dependencies: [...(state.miroFishConfig?.dependencies ?? createInitialState().miroFishConfig.dependencies)] },
     miroFishScenarios: (state.miroFishScenarios ?? createInitialState().miroFishScenarios).map((item) => ({ ...item })),
-    strategies: state.strategies.map((item) => ({ ...item, factors: [...item.factors] })),
-    strategyOptimizations: (state.strategyOptimizations ?? createInitialState().strategyOptimizations).map((item) => ({ ...item, suggestedFactors: [...item.suggestedFactors] })),
-    stockSignals: (state.stockSignals ?? createInitialState().stockSignals).map((item) => ({ ...item, reasons: [...item.reasons] })),
+    strategies: state.strategies.map((item) => ({ ...item, factors: [...(item.factors ?? [])] })),
+    strategyOptimizations: (state.strategyOptimizations ?? createInitialState().strategyOptimizations).map((item) => ({ ...item, suggestedFactors: [...(item.suggestedFactors ?? [])] })),
+    stockSignals: (state.stockSignals ?? createInitialState().stockSignals).map((item) => ({ ...item, reasons: [...(item.reasons ?? [])] })),
     autoTradeRuns: (state.autoTradeRuns ?? createInitialState().autoTradeRuns).map((item) => ({ ...item, riskNotes: [...(item.riskNotes ?? [])] })),
     tradingAgentDecisions: (state.tradingAgentDecisions ?? createInitialState().tradingAgentDecisions).map((item) => ({
       ...item,
-      analystReports: item.analystReports.map((report) => ({ ...report, evidence: [...report.evidence] })),
-      riskDebate: [...item.riskDebate]
+      analystReports: (item.analystReports ?? []).map((report) => ({ ...report, evidence: [...(report.evidence ?? [])] })),
+      riskDebate: [...(item.riskDebate ?? [])]
     })),
     backtests: state.backtests.map((item) => ({ ...item })),
     backtestResults: (state.backtestResults ?? createInitialState().backtestResults).map((item) => ({ ...item })),
@@ -733,10 +748,10 @@ export function cloneState(state: QuantState): QuantState {
     riskIndicators: (state.riskIndicators ?? createInitialState().riskIndicators).map((item) => ({ ...item })),
     services: state.services.map((item) => ({ ...item })),
     users: state.users.map((item) => ({ ...item })),
-    roles: (state.roles ?? createInitialState().roles).map((item) => ({ ...item, permissions: [...item.permissions] })),
+    roles: (state.roles ?? createInitialState().roles).map((item) => ({ ...item, permissions: [...(item.permissions ?? [])] })),
     systemConfig: { ...createInitialState().systemConfig, ...(state.systemConfig ?? {}) },
     logs: state.logs.map((item) => ({ ...item })),
-    architecture: state.architecture.map((item) => ({ ...item, modules: [...item.modules] })),
+    architecture: state.architecture.map((item) => ({ ...item, modules: [...(item.modules ?? [])] })),
     marketSeries: [...state.marketSeries],
     marketLabels: [...(state.marketLabels ?? names)],
     marketQuotes: (state.marketQuotes ?? []).map((item) => ({ ...item })),
@@ -1350,11 +1365,11 @@ export function upsertProviderConfig(state: QuantState, input: Partial<DataProvi
     id,
     name: input.name,
     category: input.category ?? "行情数据",
-    provider: input.provider,
+    provider: normalizeDataProvider(input.provider),
     endpoint: input.endpoint,
     frequency: input.frequency ?? "日K/实时快照",
     symbols: input.symbols ?? [],
-    authMode: input.authMode ?? "none",
+    authMode: normalizeAuthMode(input.authMode),
     enabled: Boolean(input.enabled ?? true),
     status: input.enabled === false ? "暂停" : "正常",
     lastSync: input.lastSync ?? "-",
@@ -1842,7 +1857,7 @@ export function syncQuantToolbox(state: QuantState): QuantState {
   });
 
   const toolboxOptimization: StrategyOptimization = {
-    id: `so-toolbox-${Date.now()}`,
+    id: "so-toolbox-integration",
     strategy: "系统级工具链",
     beforeSharpe: 1.12,
     afterSharpe: 1.28,
@@ -1854,7 +1869,7 @@ export function syncQuantToolbox(state: QuantState): QuantState {
   };
   next.strategyOptimizations = [
     toolboxOptimization,
-    ...next.strategyOptimizations
+    ...next.strategyOptimizations.filter((item) => item.id !== toolboxOptimization.id)
   ].slice(0, 20);
 
   addLog(next, "系统管理", "量化百宝箱同步完成：数据源、Broker API、回测分析、组合优化和风险预算能力已纳入系统", "quant-toolbox");
